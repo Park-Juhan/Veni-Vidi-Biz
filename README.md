@@ -1,4 +1,4 @@
-# VENI VIDI BIZ
+# Veni-Vidi-Biz
 
 Start · Predict · Succeed — 소규모 사업자를 위한 창업·운영 의사결정 웹 프로토타입.
 
