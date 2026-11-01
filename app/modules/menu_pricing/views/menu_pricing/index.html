@@ -1,0 +1,10 @@
+{% extends "module.html" %}
+{% block module_inputs %}
+<div class="integration-box">
+  <label class="checkbox-label">
+    <input type="checkbox" name="use_material" value="yes" {% if values.get('use_material')=='yes' %}checked{% endif %}>
+    재료비 모듈의 최근 1회 사용 원가 가져오기
+  </label>
+  <p>선택하면 아래 재료비 입력을 대체합니다. 연동 없이 직접 입력해도 됩니다.</p>
+</div>
+{% endblock %}
