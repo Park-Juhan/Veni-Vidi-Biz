@@ -2,7 +2,7 @@
 
 Start · Predict · Succeed — 소규모 사업자를 위한 창업·운영 의사결정 웹 프로토타입.
 
-프로젝트 계획·요구사항·설계 방향에 따른 **1차 중간보고용 구현**입니다. Python + Flask + Jinja + HTML/CSS를 사용합니다.
+프로젝트 계획·요구사항·설계 방향에 따른 **초기 구현**입니다. Python + Flask + Jinja + HTML/CSS를 사용합니다.
 Flask는 독립 URL과 MVC 분리가 명확하며 별도 프런트엔드 빌드 없이 실행할 수 있어 선택했습니다.
 정밀 계산에는 Python `Decimal`, 차트에는 CSS, 테스트에는 표준 `unittest`를 사용합니다.
 
