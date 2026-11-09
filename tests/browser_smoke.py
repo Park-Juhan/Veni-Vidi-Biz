@@ -9,12 +9,12 @@ from playwright.sync_api import sync_playwright
 ROUTES=('property','material-cost','menu-pricing','marketing','cost-optimization')
 
 
-def run(base_url='http://127.0.0.1:5000'):
+def run(base_url='http://127.0.0.1:5000',channel=True):
     base=base_url.rstrip('/')
     out=Path('tmp/ui');out.mkdir(parents=True,exist_ok=True)
     findings=[]
     with sync_playwright() as p:
-        browser=p.chromium.launch(channel='chrome',headless=True)
+        browser=p.chromium.launch(**({'channel':'chrome'} if channel else {}),headless=True)
         for width,height in ((1440,1100),(768,1024),(390,844),(320,740)):
             context=browser.new_context(viewport={'width':width,'height':height},device_scale_factor=1)
             page=context.new_page()
@@ -29,8 +29,23 @@ def run(base_url='http://127.0.0.1:5000'):
             page.get_by_role('button',name='계산하고 대안 비교하기').click()
             page.locator('[role=alert]').wait_for()
             assert page.locator('[name=use_material]').is_checked()
+            # Property input is a step-by-step wizard: only one step and no submit button at first.
+            page.goto(base+'/property/')
+            steps=page.locator('.wizard-step')
+            assert steps.count()==5 and page.locator('.wizard-step:visible').count()==1
+            assert not page.get_by_role('button',name='계산하고 대안 비교하기').is_visible()
+            page.locator('[name=budget]').fill('')
+            page.get_by_role('button',name='다음 단계 →').click()
+            assert page.locator('.wizard-progress li.active').inner_text().startswith('1')
+            page.locator('[name=budget]').fill('1500000')
+            for _ in range(4): page.get_by_role('button',name='다음 단계 →').click()
+            assert page.locator('[name=w_fit]').is_visible()
+            page.get_by_role('button',name='← 이전').click()
+            assert page.locator('[name=b_rent]').is_visible()
             for route in ROUTES:
                 page.goto(base+'/'+route+'/')
+                if route=='property':
+                    for _ in range(4): page.get_by_role('button',name='다음 단계 →').click()
                 page.get_by_role('button',name='계산하고 대안 비교하기').click()
                 page.wait_for_url(base+'/'+route+'/')
                 page.locator('.method-panel').wait_for()
@@ -62,4 +77,6 @@ def run(base_url='http://127.0.0.1:5000'):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Browser verification for VENI VIDI BIZ')
     parser.add_argument('--base-url',default='http://127.0.0.1:5000')
-    run(parser.parse_args().base_url)
+    parser.add_argument('--bundled-chromium',action='store_true',help='Use Playwright Chromium instead of installed Chrome')
+    args=parser.parse_args()
+    run(args.base_url,channel=not args.bundled_chromium)

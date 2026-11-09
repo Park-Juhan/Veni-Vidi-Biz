@@ -18,7 +18,15 @@ def csrf_token():
     return session['csrf']
 
 
-def bind_module(name,model,template,title,description,number,prepare_submission=None):
+def field_groups(fields):
+    """Groups in declaration order (Jinja's groupby sorts alphabetically)."""
+    groups={}
+    for field in fields:
+        groups.setdefault(field.group,[]).append(field)
+    return list(groups.items())
+
+
+def bind_module(name,model,template,title,description,number,prepare_submission=None,wizard=False):
     blueprint=Blueprint(name,__name__,url_prefix='/'+name.replace('_','-'),template_folder='../modules/'+name+'/views')
 
     @blueprint.route('/',methods=['GET','POST'])
@@ -45,7 +53,8 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
                 return redirect(url_for(name+'.index'),code=303)
             except ValidationError as exc:
                 error=str(exc);record=None;status=422
-        return render_template(template,fields=model.fields,values=values,record=record,error=error,
+        return render_template(template,fields=model.fields,field_groups=field_groups(model.fields),wizard=wizard,
+                               values=values,record=record,error=error,
                                module_name=name,title=title,description=description,number=number),status
 
     return blueprint

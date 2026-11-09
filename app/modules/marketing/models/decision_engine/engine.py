@@ -1,4 +1,5 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
+from itertools import combinations
 from app.common.decision import Blackboard, KnowledgeSource, ControlComponent, ResultGenerator
 
 
@@ -21,7 +22,33 @@ def _constraints(board):
     board.candidates.sort(key=lambda c:(c['feasible'],c['score']),reverse=True)
 
 
+def _breakeven(board):
+    v=board.inputs
+    unit=v['ticket']*v['contribution_rate']/100
+    for c in board.candidates:
+        # Extra customers per month whose contribution pays back the channel cost.
+        c['breakeven']=(c['cost']/unit).to_integral_value(rounding=ROUND_CEILING) if unit>0 else None
+
+
+def _portfolio(board):
+    """0-1 knapsack by enumeration: maximise total fit score within budget and hours."""
+    v=board.inputs
+    best=()
+    for size in range(1,len(board.candidates)+1):
+        for combo in combinations(board.candidates,size):
+            cost=sum(c['cost'] for c in combo);hours=sum(c['hours'] for c in combo)
+            if cost>v['budget'] or hours>v['hours']: continue
+            key=(sum(c['score'] for c in combo),-cost,-hours)
+            if not best or key>best[0]: best=(key,combo)
+    combo=best[1] if best else ()
+    board.facts['portfolio']=[c['name'] for c in combo]
+    board.facts['portfolio_cost']=sum((c['cost'] for c in combo),Decimal(0))
+    board.facts['portfolio_hours']=sum((c['hours'] for c in combo),Decimal(0))
+    board.facts['portfolio_score']=sum(c['score'] for c in combo)
+
+
 def compare_channels(v):
     board=Blackboard(v)
-    ControlComponent().run(board,[KnowledgeSource('가상 채널·직접/업체 대안 준비',_channels),KnowledgeSource('예산·시간 제약 및 고객층·목적 비교',_constraints)])
+    ControlComponent().run(board,[KnowledgeSource('가상 채널·직접/업체 대안 준비',_channels),KnowledgeSource('예산·시간 제약 및 고객층·목적 비교',_constraints),
+                                  KnowledgeSource('광고 손익분기 고객 수 계산',_breakeven),KnowledgeSource('예산·시간 제약 하 채널 조합 최적화 (0-1 배낭 문제)',_portfolio)])
     return ResultGenerator().generate(board)
