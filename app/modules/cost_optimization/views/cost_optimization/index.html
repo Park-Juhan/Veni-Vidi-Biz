@@ -1,2 +1,14 @@
 {% extends "module.html" %}
-{# Module-specific view extension point. #}
+{# Each cost item and its saving rate share one row, split into two steps. #}
+{% block field_groups %}
+{% from '_steps.html' import render_steps %}
+{% set by_name = {} %}{% for field in fields %}{% set _ = by_name.update({field.name: field}) %}{% endfor %}
+{% set ns = namespace(rows=[]) %}
+{% for field in fields if field.group == '월 운영 비용' %}
+  {% set ns.rows = ns.rows + [(field.label.replace(' (원/월)',''), field, by_name[field.name ~ '_rate'])] %}
+{% endfor %}
+{{ render_steps([
+  dict(title='매출 기준', hint='이번 달 예상 매출과 비교할 이전 월 총비용입니다.', fields=fields|selectattr('group','equalto','기본 조건')|list),
+  dict(title='비용과 절감 가정', hint='항목마다 현재 월 비용과 줄일 수 있다고 보는 비율(%)을 한 줄에 입력합니다. 줄이지 않을 항목은 0%로 둡니다.', rows=ns.rows, cols=('월 비용 (원)','절감 (%)')),
+], values) }}
+{% endblock %}

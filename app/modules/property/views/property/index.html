@@ -1,2 +1,17 @@
 {% extends "module.html" %}
-{# Module-specific view extension point. #}
+{# Property input is long (24 fields), so it is split into step panels (one per field group). #}
+{% block field_groups %}
+{% from '_steps.html' import render_steps %}
+{% set hints = {
+  '기본 조건': '업종, 임대료 예산, 필요 면적처럼 두 후보에 똑같이 적용할 조건입니다.',
+  '공통 초기 자금': '어느 후보를 고르든 공통으로 드는 초기 비용입니다.',
+  '후보 A': '첫 번째 후보의 임대 조건과 직접 평가한 적합도(1~5)를 입력합니다.',
+  '후보 B': '두 번째 후보의 임대 조건과 직접 평가한 적합도(1~5)를 입력합니다.',
+} %}
+{% set ns = namespace(steps=[], seen=[]) %}
+{% for field in fields if field.group not in ns.seen %}
+  {% set ns.seen = ns.seen + [field.group] %}
+  {% set ns.steps = ns.steps + [dict(title=field.group, hint=hints.get(field.group), fields=fields|selectattr('group','equalto',field.group)|list)] %}
+{% endfor %}
+{{ render_steps(ns.steps, values) }}
+{% endblock %}

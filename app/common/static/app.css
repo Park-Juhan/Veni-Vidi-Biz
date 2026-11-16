@@ -5,3 +5,37 @@
 @media(max-width:950px){.sidebar{position:static;width:100%;padding:18px 22px 10px;border-right:0;border-bottom:1px solid var(--line)}.brand{font-size:15px}.nav-caption,.sidebar-note{display:none}.sidebar nav{display:flex;overflow:auto;gap:6px;margin-top:15px}.nav-item{white-space:nowrap;font-size:10px;padding:8px 10px;gap:6px;margin:0}.nav-icon{width:auto;font-size:9px}.nav-item:first-child .nav-icon{font-size:16px}.workspace{margin-left:0}.topbar{height:55px}.analysis-layout{grid-template-columns:minmax(290px,.8fr) minmax(0,1fr)}.module-heading h1{font-size:25px}}
 @media(max-width:680px){main{padding:26px 18px 38px}.topbar{padding:0 18px;font-size:10px}.user-chip{font-size:9px}.topbar .muted{display:none}.page-heading{padding-bottom:25px;min-height:0}.hero-art{display:none}h1{font-size:31px}.lead{font-size:12px}.notice{padding:14px;gap:10px;margin-bottom:25px}.notice>.badge{display:none}.notice p{font-size:10px}.section-heading{align-items:flex-start}.section-heading h2{font-size:17px}.count-label{display:none}.module-grid{gap:12px}.module-card{padding:18px;min-height:260px}.module-card h3{font-size:15px}.module-card p{font-size:11px}.card-kicker{font-size:9px}.card-top{margin-bottom:18px}.guide-card ol{font-size:10px}.analysis-layout{grid-template-columns:minmax(0,1fr)}.module-heading{display:block}.module-heading h1{font-size:25px}.module-heading .text-link{display:inline-block;margin-top:6px}.input-panel form{padding:18px}.fields-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}.field:has(select){grid-column:1/-1}.field label{font-size:10px}.empty-result{min-height:300px}.metrics{gap:10px}.metric strong{font-size:21px}footer{margin:0 18px;display:block;font-size:8px}footer span{display:block;margin-top:5px}}
 @media(max-width:380px){.module-grid,.fields-grid{grid-template-columns:minmax(0,1fr)}.module-card{min-height:220px}.metric strong{font-size:18px}.brand small{font-size:6px}.empty-steps{gap:5px}.empty-steps span{padding:6px}}
+/* Step panels for long forms (property). Without JS (.is-enhanced absent) all panels stay visible. */
+.form-steps{margin-top:6px}.step-tabs,.step-nav,.step-count{display:none}.step-panel .step-hint{font-size:10px;color:#7c879b;line-height:1.7;margin:2px 0 14px}.is-enhanced .step-panel legend{white-space:nowrap}
+.is-enhanced .step-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;margin:4px 0 2px}
+.step-tab{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--line);background:#fafbfd;border-radius:8px;padding:9px 4px 8px;color:#7c879b;font-size:10px;font-weight:650;line-height:1.3;text-align:center;min-width:0}
+.step-tab b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#e9edf5;color:#7c879b;font-size:10px}
+.step-tab span{overflow-wrap:anywhere}.step-tab:hover{border-color:#c9d5f9;color:var(--blue)}
+.step-tab[aria-selected=true]{border-color:#9db2ef;background:var(--light);color:var(--blue)}.step-tab[aria-selected=true] b{background:var(--blue);color:#fff}
+.step-tab.is-complete b{background:#dff3ec;color:var(--teal)}.step-tab.is-complete b::before{content:'✓'}.step-tab.is-complete b{font-size:0}.step-tab.is-complete b::before{font-size:11px}
+.step-tab[aria-selected=true].is-complete b{background:var(--blue);color:#fff}
+.step-tab.has-error{border-color:#f0c4bc;color:#a34f41}.step-tab.has-error b{background:#fbe1dc;color:#a34f41}
+.is-enhanced .step-panel{border-top:0;margin-top:14px;padding-top:0}.is-enhanced .step-panel[hidden]{display:none}
+.is-enhanced .step-count{display:inline-block;font-size:9px;font-weight:650;color:#9ba5b7;margin-right:8px;letter-spacing:.5px}
+.is-enhanced .step-nav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:4px;padding-top:12px;border-top:1px dashed var(--line)}
+.step-button{border:1px solid #dce2ed;background:#fff;color:#536079;border-radius:6px;padding:8px 12px;font-size:11px;font-weight:650}.step-button:hover{border-color:#9db2ef;color:var(--blue)}
+.step-button-next{border-color:#c9d5f9;color:var(--blue);background:var(--light)}.step-done{font-size:10px;color:#7c879b;text-align:right}
+@media(max-width:680px){.step-tab{font-size:9px;padding:8px 2px}}
+/* Paired rows: one cost item with its amount and saving rate on a single line. */
+.pair-table{display:grid;gap:8px;margin-bottom:14px}
+.pair-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) 72px;gap:8px;align-items:center}
+.pair-head{font-size:9px;font-weight:650;color:#9ba5b7;letter-spacing:.3px}.pair-head span:not(:first-child){padding-left:2px}
+.pair-label{font-size:11px;font-weight:650;color:#536079;line-height:1.4;overflow-wrap:anywhere}
+.pair-cell input:not([type=checkbox]){min-height:38px;padding:8px 9px}
+/* Compact result: one-line source, denser metrics, chart/table/notes in tabs. */
+.result-source{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:12px 0}.result-source p{margin:0}
+.metrics{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}.metric{padding:12px 14px}.metric>span{margin-bottom:4px}.metric strong{font-size:18px;line-height:1.4}
+.result-tablist{display:none}
+.result-tabs.is-enhanced .result-tablist{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
+.result-tab{border:0;border-bottom:2px solid transparent;background:none;color:#7c879b;font-size:12px;font-weight:650;padding:9px 12px;margin-bottom:-1px;white-space:nowrap}
+.result-tab:hover{color:var(--blue)}.result-tab[aria-selected=true]{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-count{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#e9edf5;color:#7c879b;font-size:9px;margin-left:3px}
+.result-tab[aria-selected=true] .tab-count{background:var(--light);color:var(--blue)}
+.result-tabs.is-enhanced [data-tab-panel][hidden]{display:none}.result-tabs.is-enhanced .chart-panel,.result-tabs.is-enhanced .table-panel{margin-bottom:0}
+td:last-child{min-width:220px}
+.result-tabs th,.result-tabs td{padding:9px 12px;line-height:1.5}
