@@ -7,7 +7,7 @@
 <div class="pair-cell"><label class="sr-only" for="{{ field.name }}">{{ field.label }}</label><input id="{{ field.name }}" name="{{ field.name }}" type="{{ field.kind }}" value="{{ values.get(field.name,'') }}" required min="{{ field.minimum }}" max="{{ field.maximum }}" step="{{ field.step }}" inputmode="decimal"></div>
 {%- endmacro %}
 
-{% macro render_steps(steps, values) -%}
+{% macro render_steps(steps, values, imported={}) -%}
 <div class="form-steps" data-steps>
   <div class="step-tabs" role="tablist" aria-label="입력 단계">
     {% for step in steps %}<button type="button" class="step-tab" role="tab" id="step-tab-{{ loop.index }}" aria-controls="step-panel-{{ loop.index }}" data-step-tab="{{ loop.index0 }}"><b>{{ loop.index }}</b><span>{{ step.title }}</span></button>{% endfor %}
@@ -19,10 +19,10 @@
     {% if step.rows %}
     <div class="pair-table">
       <div class="pair-row pair-head" aria-hidden="true"><span>항목</span><span>{{ step.cols[0] }}</span><span>{{ step.cols[1] }}</span></div>
-      {% for label, first, second in step.rows %}<div class="pair-row"><span class="pair-label">{{ label }}</span>{{ pair_input(first, values) }}{{ pair_input(second, values) }}</div>{% endfor %}
+      {% for label, first, second in step.rows %}<div class="pair-row"><span class="pair-label">{{ label }}{% if imported.get(first.name) %}<small class="import-tag" title="{{ imported[first.name] }}">← {{ imported[first.name].split(' · ')[0] }}</small>{% endif %}</span>{{ pair_input(first, values) }}{{ pair_input(second, values) }}</div>{% endfor %}
     </div>
     {% else %}
-    <div class="fields-grid">{% for field in step.fields %}{{ render_field(field, values) }}{% endfor %}</div>
+    <div class="fields-grid">{% for field in step.fields %}{{ render_field(field, values, imported) }}{% endfor %}</div>
     {% endif %}
     <div class="step-nav">
       {% if not loop.first %}<button type="button" class="step-button" data-step-prev>← 이전</button>{% else %}<span></span>{% endif %}

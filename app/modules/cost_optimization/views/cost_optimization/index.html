@@ -1,5 +1,25 @@
 {% extends "module.html" %}
-{# Each cost item and its saving rate share one row, split into two steps. #}
+{# Each cost item and its saving rate share one row, split into two steps.
+   Revenue, rent, material and advertising can be filled from other modules' latest results. #}
+{% block module_inputs %}
+{% if can_import %}
+<div class="integration-box import-box">
+  <div class="import-row">
+    <p>매출·임대료·재료비·광고비를 부동산, 메뉴 가격, 마케팅 모듈의 최근 계산에서 불러옵니다. 불러온 뒤에도 고칠 수 있습니다.</p>
+    <button type="submit" class="step-button" name="action" value="import" formnovalidate>다른 모듈에서 불러오기</button>
+  </div>
+  {% if import_done %}
+  <div class="import-result" role="status">
+    {% if imported %}<strong>{{ imported|length }}개 값을 불러왔습니다. 확인 후 계산하세요.</strong>
+    <ul>{% for field in fields if imported.get(field.name) %}<li><b>{{ field.label.split(' (')[0] }}</b> ← {{ imported[field.name] }}</li>{% endfor %}</ul>
+    {% else %}<strong>불러올 값이 없습니다.</strong>{% endif %}
+    {% if import_missing %}<p>계산 기록이 없어 건너뜀: {{ import_missing|join(', ') }}. 해당 모듈에서 먼저 계산하세요.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% for field, label in (imported or {}).items() %}<input type="hidden" name="import_{{ field }}" value="{{ values.get(field,'') }}|{{ label }}">{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
 {% block field_groups %}
 {% from '_steps.html' import render_steps %}
 {% set by_name = {} %}{% for field in fields %}{% set _ = by_name.update({field.name: field}) %}{% endfor %}
@@ -10,5 +30,5 @@
 {{ render_steps([
   dict(title='매출 기준', hint='이번 달 예상 매출과 비교할 이전 월 총비용입니다.', fields=fields|selectattr('group','equalto','기본 조건')|list),
   dict(title='비용과 절감 가정', hint='항목마다 현재 월 비용과 줄일 수 있다고 보는 비율(%)을 한 줄에 입력합니다. 줄이지 않을 항목은 0%로 둡니다.', rows=ns.rows, cols=('월 비용 (원)','절감 (%)')),
-], values) }}
+], values, imported or {}) }}
 {% endblock %}

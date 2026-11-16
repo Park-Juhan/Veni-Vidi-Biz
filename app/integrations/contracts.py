@@ -13,3 +13,22 @@ class MaterialCostSnapshot:
 
 class MaterialCostProvider(Protocol):
     def export_usage_cost(self, workspace: str) -> MaterialCostSnapshot | None: ...
+
+
+@dataclass(frozen=True)
+class OperatingCostSnapshot:
+    """Monthly figures another module can offer to operating-cost analysis.
+
+    A provider fills only the figures it actually computes; the rest stay None.
+    """
+    detail: str
+    source: str
+    updated_at: str
+    monthly_revenue: Decimal | None = None
+    monthly_rent: Decimal | None = None
+    monthly_material: Decimal | None = None
+    monthly_advertising: Decimal | None = None
+
+
+class OperatingCostProvider(Protocol):
+    def export_operating_costs(self, workspace: str) -> OperatingCostSnapshot | None: ...

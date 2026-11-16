@@ -1,6 +1,7 @@
 from decimal import Decimal
 from app.common.model import AnalysisModel
 from app.common.validation import Field
+from app.integrations.contracts import OperatingCostSnapshot
 from .decision_engine.engine import compare_locations
 
 
@@ -43,7 +44,14 @@ class PropertyModel(AnalysisModel):
             metrics=[('조건 비교 1순위', best['name'], ''), ('해당 후보 초기 필요 자금', best['startup'], '원'), ('월 임대료', v[k+'_rent'], '원')],
             columns=['후보', '월 임대료 (원)', '보증금 (원)', '면적 (㎡)', '초기 필요 자금 (원)', '부족 자금 (원)', '조건 점수 / 100', '검토 사항'], rows=rows,
             chart=[('보증금',v[k+'_deposit']),('첫 달 임대료',v[k+'_rent']),('시설·인테리어',v[k+'_interior']),('장비',v['equipment']),('초기 재료',v['initial_material']),('기타',v['other_startup'])],
-            chart_title='조건 비교 1순위 후보의 초기 자금 구성',
+            chart_title='조건 비교 1순위 후보의 초기 자금 구성',best_name=best['name'],best_rent=v[k+'_rent'],
             notes=['초기 자금 = 보증금 + 첫 달 임대료 + 시설·인테리어 + 장비 + 초기 재료 + 기타. 보증금은 반환 가능한 묶이는 자금입니다.',
                    '입지 점수는 사용자 평가와 예산·면적 조건을 합산한 시연용 규칙입니다. 실제 유동인구·상권·매물 자료를 조회하지 않습니다.',
                    '점수: 고객층 30점, 동선 20점, 시설 10점, 예산 이내 25점, 필요 면적 충족 15점. 점수가 높아도 미충족 조건을 확인하세요.'], trace=decision['trace'])
+
+    def export_operating_costs(self, workspace):
+        record = self.latest(workspace)
+        if record is None or 'best_rent' not in record.result:
+            return None
+        return OperatingCostSnapshot(detail=f"1순위 후보 {record.result['best_name']}", source=record.source,
+                                     updated_at=record.updated_at, monthly_rent=record.result['best_rent'])

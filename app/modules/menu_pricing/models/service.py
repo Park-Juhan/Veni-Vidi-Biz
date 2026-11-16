@@ -1,7 +1,7 @@
 from decimal import Decimal, ROUND_CEILING
 from app.common.model import AnalysisModel
 from app.common.validation import Field
-from app.integrations.contracts import MaterialCostProvider
+from app.integrations.contracts import MaterialCostProvider, OperatingCostSnapshot
 
 
 class MenuPricingModel(AnalysisModel):
@@ -32,7 +32,16 @@ class MenuPricingModel(AnalysisModel):
             rows.append([label,price,v['volume'],price*v['volume'],profit,profit*v['volume'],profit/price*100 if price else '산출 불가'])
         return dict(metrics=[('100원 단위 올림 가격',suggested,'원'),('단위 변동 원가',cost,'원'),('기준 가격의 월 공헌이익',(suggested-cost)*v['volume'],'원')],
                     columns=['시나리오','판매가 (원)','월 판매량','월 매출 (원)','단위 공헌이익 (원)','월 공헌이익 (원)','공헌이익률 (%)'],rows=rows,
-                    chart=[(label,price*v['volume']) for label,price in prices],chart_title='가격별 월 매출 비교 (동일 판매량 가정)',
+                    chart=[(label,price*v['volume']) for label,price in prices],chart_title='가격별 월 매출 비교 (동일 판매량 가정)',menu_name=v['name'],monthly_revenue=v['price']*v['volume'],monthly_material=v['material']*v['volume'],monthly_volume=v['volume'],
                     notes=[f'반올림 전 가격 = 단위 변동 원가 ÷ (1 - 목표 공헌이익률) = {exact:,.2f}원. 표시 가격은 100원 단위 올림입니다.',
                            '공헌이익 = 매출 - 변동 원가. 임대료·인건비·세금 등을 차감한 순이익이 아닙니다.',
                            '모든 가격에서 입력 판매량을 동일하게 가정합니다. 가격에 따른 수요 변화나 실제 적정 시장 가격을 예측하지 않습니다.'])
+
+    def export_operating_costs(self, workspace):
+        record = self.latest(workspace)
+        if record is None or 'monthly_volume' not in record.result:
+            return None
+        result = record.result
+        return OperatingCostSnapshot(detail=f"메뉴 '{result['menu_name']}' 월 {result['monthly_volume']:,.0f}개 기준", source=record.source,
+                                     updated_at=record.updated_at, monthly_revenue=result['monthly_revenue'],
+                                     monthly_material=result['monthly_material'])

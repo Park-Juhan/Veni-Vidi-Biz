@@ -18,7 +18,7 @@ def csrf_token():
     return session['csrf']
 
 
-def bind_module(name,model,template,title,description,number,prepare_submission=None):
+def bind_module(name,model,template,title,description,number,prepare_submission=None,handle_action=None,extra_context=None):
     blueprint=Blueprint(name,__name__,url_prefix='/'+name.replace('_','-'),template_folder='../modules/'+name+'/views')
 
     @blueprint.route('/',methods=['GET','POST'])
@@ -28,6 +28,7 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
         values=record.inputs.copy() if record else model.defaults()
         error=None
         status=200
+        extra=dict(extra_context or {})
         example=request.args.get('example')=='1'
         if example:
             values=model.defaults(); record=None
@@ -37,6 +38,13 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
                 abort(400,description='요청 확인 정보가 만료되었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
             values={field.name: request.form.get(field.name,'') for field in model.fields}
             values['data_mode']='user' if request.form.get('data_mode')=='user' else 'example'
+            action=request.form.get('action','')
+            if action and handle_action:
+                # Non-saving actions (e.g. fill inputs from other modules) re-render the form.
+                values,action_context=handle_action(action,values,workspace,request.form)
+                extra.update(action_context)
+                return render_template(template,fields=model.fields,values=values,record=record,error=None,
+                                       module_name=name,title=title,description=description,number=number,**extra)
             try:
                 source='사용자 입력 · 실측 검증 안 됨' if values['data_mode']=='user' else '가상 예시 · 실제 시장 자료 아님'
                 if prepare_submission:
@@ -46,6 +54,6 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
             except ValidationError as exc:
                 error=str(exc);record=None;status=422
         return render_template(template,fields=model.fields,values=values,record=record,error=error,
-                               module_name=name,title=title,description=description,number=number),status
+                               module_name=name,title=title,description=description,number=number,**extra),status
 
     return blueprint

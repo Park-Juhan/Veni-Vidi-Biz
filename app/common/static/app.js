@@ -47,7 +47,7 @@ document.querySelectorAll('[data-steps]').forEach(root => {
   form.addEventListener('input', () => refresh(false));
   form.addEventListener('change', () => refresh(false));
   form.addEventListener('submit', event => {
-    if (form.checkValidity()) return;
+    if (event.submitter?.formNoValidate || form.checkValidity()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     refresh(true);
@@ -90,9 +90,19 @@ document.querySelectorAll('[data-tabs]').forEach(root => {
 // Preserve user control over whether entries are fictional or user supplied.
 // Native form validation and server validation both remain active.
 document.querySelectorAll('form').forEach(form => {
-  form.addEventListener('submit', () => {
-    if (!form.checkValidity()) return;
-    const button = form.querySelector('button[type="submit"]');
-    if (button) { button.textContent = '계산 중…'; button.disabled = true; }
+  form.addEventListener('submit', event => {
+    const submitter = event.submitter;
+    const skipsValidation = submitter?.formNoValidate;
+    if (!skipsValidation && !form.checkValidity()) return;
+    const button = submitter || form.querySelector('button[type="submit"]');
+    if (!button) return;
+    // A disabled submitter is not sent, so keep its name/value (e.g. action=import) in a hidden copy.
+    if (button.name) {
+      const copy = document.createElement('input');
+      copy.type = 'hidden'; copy.name = button.name; copy.value = button.value;
+      form.appendChild(copy);
+    }
+    button.textContent = skipsValidation ? '불러오는 중…' : '계산 중…';
+    button.disabled = true;
   });
 });

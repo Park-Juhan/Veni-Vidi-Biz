@@ -1,6 +1,7 @@
 from decimal import Decimal
 from app.common.model import AnalysisModel
 from app.common.validation import Field
+from app.common.time import korean_time
 from .decision_engine.engine import compare_savings
 
 
@@ -13,6 +14,33 @@ class CostOptimizationModel(AnalysisModel):
             Field(key,label+' (원/월)',default,group='월 운영 비용'),
             Field(key+'_rate',label+' 절감 가정 (%)',rate,maximum='100',group='항목별 절감 시나리오'),
         ))
+
+    # Snapshot attribute -> this module's input field.
+    IMPORTABLE=(('monthly_revenue','revenue'),('monthly_rent','rent'),('monthly_material','material'),('monthly_advertising','advertising'))
+
+    def __init__(self,repository,cost_providers=()):
+        super().__init__(repository)
+        # (module title, OperatingCostProvider) pairs wired by the composition root.
+        self.cost_providers=tuple(cost_providers)
+
+    def import_operating_costs(self,workspace):
+        """Collect monthly figures other modules computed for this workspace.
+
+        Returns values (field -> plain decimal text), origins (field -> label) and
+        missing (titles of modules with no saved result). The first provider wins per field.
+        """
+        values,origins,missing={},{},[]
+        for title,provider in self.cost_providers:
+            snapshot=provider.export_operating_costs(workspace)
+            if snapshot is None:
+                missing.append(title); continue
+            label=f'{title} · {snapshot.detail} · {korean_time(snapshot.updated_at)}'
+            if '가상' in snapshot.source: label+=' · 가상 예시'
+            for attribute,field in self.IMPORTABLE:
+                value=getattr(snapshot,attribute)
+                if value is not None and field not in values:
+                    values[field]=f'{value:f}'; origins[field]=label
+        return dict(values=values,origins=origins,missing=missing)
 
     def calculate(self,v):
         amounts={key:v[key] for key,*_ in CATEGORIES}

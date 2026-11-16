@@ -31,7 +31,12 @@ def create_app(config=None,enabled_modules=None):
         if name not in enabled: continue
         repository_class=getattr(importlib.import_module(f'app.modules.{name}.repositories.memory'),cls+'Repository')
         model_class=getattr(importlib.import_module(f'app.modules.{name}.models.service'),cls+'Model')
-        options={'material_provider':models.get('material_cost')} if name=='menu_pricing' else {}
+        options={}
+        if name=='menu_pricing': options={'material_provider':models.get('material_cost')}
+        if name=='cost_optimization':
+            # Only enabled providers; each is labelled "<number> <title>" for display.
+            labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
+            options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models)}
         models[name]=model_class(repository_class(),**options)
     navigation=[]
     for name,_,title,description,short,number in MODULES:
