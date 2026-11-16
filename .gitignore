@@ -51,6 +51,7 @@ id_ed25519*
 .aws/
 .codex/
 .ssh/
+.claude/settings.local.json
 
 # Editor and OS files
 .vscode/
