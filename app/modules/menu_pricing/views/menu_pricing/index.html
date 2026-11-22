@@ -7,4 +7,53 @@
   </label>
   <p>선택하면 아래 재료비 입력을 대체합니다. 연동 없이 직접 입력해도 됩니다.</p>
 </div>
+{% if recipe_enabled %}
+<div class="integration-box recipe-box">
+  <label class="checkbox-label">
+    <input type="checkbox" name="use_recipe" value="yes" {% if values.get('use_recipe')=='yes' %}checked{% endif %} {% if not saved_materials %}disabled{% endif %}>
+    내 재료 목록으로 레시피 원가 계산
+  </label>
+  {% if saved_materials %}
+  <p>재료와 1개당 사용량을 고르면 합계가 재료비가 됩니다. 계산하면 메뉴명으로 레시피를 저장합니다.</p>
+  <div class="recipe-rows">
+    <div class="recipe-row recipe-head" aria-hidden="true"><span>재료 (단위 원가)</span><span>사용량</span></div>
+    {% for i in range(recipe_rows) %}{% set selected = values.get('recipe_material_' ~ i, '') %}
+    <div class="recipe-row">
+      <label class="sr-only" for="recipe_material_{{ i }}">{{ i + 1 }}번째 재료</label>
+      <select id="recipe_material_{{ i }}" name="recipe_material_{{ i }}">
+        <option value="">선택 안 함</option>
+        {% for item in saved_materials %}<option value="{{ item.material_id }}" {% if selected == item.material_id|string %}selected{% endif %}>{{ item.name }} · {{ item.cost_per_base_unit|display }}원/{{ item.base_unit }}</option>{% endfor %}
+      </select>
+      <label class="sr-only" for="recipe_qty_{{ i }}">{{ i + 1 }}번째 재료 사용량 (재료 단위)</label>
+      <input id="recipe_qty_{{ i }}" name="recipe_qty_{{ i }}" type="number" min="0" step="any" inputmode="decimal" value="{{ values.get('recipe_qty_' ~ i, '') }}" placeholder="g·mL·개">
+    </div>
+    {% endfor %}
+  </div>
+  <p>사용량은 재료 이름 옆 단위(g, mL, 개)로 입력합니다. 레시피를 쓰면 위 "가져오기"는 끄세요.</p>
+  {% else %}
+  <p>아직 저장한 재료가 없습니다. <a href="{{ url_for('material_cost.index') }}">재료비 관리</a>에서 "내 재료 목록에 저장"을 선택하고 계산하세요.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block module_extra %}
+{% if recipe_enabled %}
+<section class="panel list-panel" aria-labelledby="menus-title">
+  <div class="panel-header"><h2 id="menus-title">03 <span>저장한 메뉴 레시피</span></h2><span class="small-label">{{ menus|length }} MENUS</span></div>
+  {% if menus %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="저장한 메뉴 레시피"><table>
+    <thead><tr><th scope="col">메뉴</th><th scope="col">재료 구성</th><th scope="col">현재 단가 기준 재료비 (원)</th><th scope="col">저장 시점</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
+    <tbody>{% for menu in menus %}<tr>
+      <td><b>{{ menu.name }}</b></td>
+      <td>{% for item in menu['items'] %}{{ item.material_name }} {{ item.quantity|display }}{{ item.unit }}{% if not loop.last %} · {% endif %}{% else %}<span class="muted">재료 없음 (삭제됨)</span>{% endfor %}</td>
+      <td>{{ menu.cost|display }}</td><td>{{ menu.updated_at|korean_time }}</td>
+      <td class="row-actions">
+        <form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="menu_id" value="{{ menu.id }}"><button class="link-button link-primary" type="submit" name="action" value="load_menu" formnovalidate data-busy-label="불러오는 중…">불러오기</button><button class="link-button" type="submit" name="action" value="delete_menu" formnovalidate data-busy-label="삭제 중…" aria-label="{{ menu.name }} 삭제">삭제</button></form>
+      </td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <small class="list-note">재료비는 내 재료 목록의 최근 단가로 다시 계산합니다. 재료 가격이 바뀌면 이 값도 바뀝니다.</small>
+  {% else %}<p class="list-empty">저장한 메뉴가 없습니다. 레시피 원가 계산을 선택하고 계산하면 메뉴명으로 저장됩니다.</p>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

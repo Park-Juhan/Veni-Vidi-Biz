@@ -1,2 +1,27 @@
 {% extends "module.html" %}
-{# Module-specific view extension point. #}
+{% block module_inputs %}
+{% if catalog_enabled %}
+<div class="integration-box">
+  <label class="checkbox-label"><input type="checkbox" name="save_material" value="yes" {% if values.get('save_material')=='yes' %}checked{% endif %}> 계산하면서 이 재료를 내 재료 목록에 저장</label>
+  <p>같은 이름이 있으면 최근 구매로 기록합니다. 저장한 재료는 메뉴 가격 모듈에서 레시피로 합산할 수 있습니다.</p>
+</div>
+{% endif %}
+{% endblock %}
+{% block module_extra %}
+{% if catalog_enabled %}
+<section class="panel list-panel" aria-labelledby="materials-title">
+  <div class="panel-header"><h2 id="materials-title">03 <span>내 재료 목록</span></h2><span class="small-label">{{ materials|length }} ITEMS</span></div>
+  {% if materials %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="내 재료 목록"><table>
+    <thead><tr><th scope="col">재료</th><th scope="col">최근 구매 단가 (원)</th><th scope="col">구매 수량</th><th scope="col">수율 (%)</th><th scope="col">사용 단위 원가</th><th scope="col">구매 기록</th><th scope="col">최근 저장</th><th scope="col"><span class="sr-only">삭제</span></th></tr></thead>
+    <tbody>{% for item in materials %}<tr>
+      <td><b>{{ item.name }}</b></td><td>{{ item.unit_price|display }} / {{ item.unit }}</td><td>{{ item.quantity|display }} {{ item.unit }}</td><td>{{ item.yield_rate|display }}</td>
+      <td>{{ item.cost_per_base_unit|display }}원 / {{ item.base_unit }}</td><td>{{ item.purchases }}건</td><td>{{ item.purchased_at|korean_time }}</td>
+      <td><form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_material"><input type="hidden" name="material_id" value="{{ item.id }}"><button class="link-button" type="submit" formnovalidate data-busy-label="삭제 중…" aria-label="{{ item.name }} 삭제">삭제</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <small class="list-note">사용 단위 원가 = 최근 구매 단가 ÷ 단위 환산 ÷ 수율. 메뉴 레시피는 이 값으로 계산합니다.</small>
+  {% else %}<p class="list-empty">아직 저장한 재료가 없습니다. 위 계산 화면에서 "내 재료 목록에 저장"을 선택하고 계산하세요.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

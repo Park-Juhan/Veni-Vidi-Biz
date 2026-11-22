@@ -4,6 +4,9 @@
 <div class="module-heading"><div><div class="eyebrow">BUSINESS TOOL / {{ number }}</div><h1>{{ title }}</h1><p class="lead">{{ description }}</p></div><a class="text-link" href="{{ url_for(module_name+'.index',example=1) }}">가상 예시로 다시 입력 ↺</a></div>
 <div class="notice"><span class="notice-symbol">i</span><div><strong>입력 기반 비교 · 실제 시장 자료 미연결</strong><p>기본값은 가상 예시입니다. 결과는 입력한 조건과 화면에 표시된 가정에 따른 참고 계산입니다.</p></div></div>
 {% if error %}<div class="error-banner" role="alert"><strong>입력 내용을 확인해 주세요.</strong><p>{{ error }}</p></div>{% endif %}
+{% for message in get_flashed_messages() %}<div class="notice notice-ok" role="status"><span class="notice-symbol">✓</span><div><strong>{{ message }}</strong></div></div>{% endfor %}
+{% if action_message %}<div class="notice notice-ok" role="status"><span class="notice-symbol">✓</span><div><strong>{{ action_message }}</strong></div></div>{% endif %}
+{% if action_error %}<div class="error-banner" role="alert"><strong>확인해 주세요.</strong><p>{{ action_error }}</p></div>{% endif %}
 <div class="analysis-layout">
   <section class="panel input-panel"><div class="panel-header"><h2>01 <span>조건 입력</span></h2><span class="small-label">INPUT</span></div>
     <form method="post" action="{{ url_for(module_name+'.index') }}">
@@ -25,4 +28,5 @@
   {% else %}<div class="empty-result"><div class="empty-icon">↗</div><h3>내 조건으로 다음 선택을 살펴보세요.</h3><p>왼쪽 조건을 확인한 후 계산하면<br>결과와 비교 표, 계산 근거가 여기에 표시됩니다.</p><div class="empty-steps"><span>조건 입력</span><i>→</i><span>계산 실행</span><i>→</i><span>대안 비교</span></div></div>{% endif %}
   </section>
 </div>
+{% block module_extra %}{% endblock %}
 {% endblock %}

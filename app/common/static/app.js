@@ -102,7 +102,7 @@ document.querySelectorAll('form').forEach(form => {
       copy.type = 'hidden'; copy.name = button.name; copy.value = button.value;
       form.appendChild(copy);
     }
-    button.textContent = skipsValidation ? '불러오는 중…' : '계산 중…';
+    button.textContent = button.dataset.busyLabel || (skipsValidation ? '불러오는 중…' : '계산 중…');
     button.disabled = true;
   });
 });

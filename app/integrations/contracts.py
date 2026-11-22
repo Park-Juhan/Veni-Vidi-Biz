@@ -32,3 +32,17 @@ class OperatingCostSnapshot:
 
 class OperatingCostProvider(Protocol):
     def export_operating_costs(self, workspace: str) -> OperatingCostSnapshot | None: ...
+
+
+@dataclass(frozen=True)
+class MaterialCostItem:
+    """One saved material priced per base unit (g, mL or 개), yield already applied."""
+    material_id: int
+    name: str
+    base_unit: str
+    cost_per_base_unit: Decimal
+    updated_at: str
+
+
+class MaterialCatalogProvider(Protocol):
+    def list_material_costs(self, workspace: str) -> list[MaterialCostItem]: ...

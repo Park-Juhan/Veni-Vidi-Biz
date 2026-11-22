@@ -54,3 +54,15 @@ td:last-child{min-width:220px}
 .danger-card{border-color:#f4d5d0}.danger-card .checkbox-label{display:flex;gap:8px;align-items:center;font-size:11px;color:#a34f41;margin:14px 0 4px}
 .danger-button{width:100%;margin-top:10px;background:#fff;border:1px solid #e3a99f;color:#a34f41;border-radius:7px;padding:12px;font-size:12px;font-weight:650}.danger-button:hover{background:#fff1ef}
 .form-footnote a{color:var(--blue)}
+/* Saved lists below a module (materials, menus) */
+.list-panel{margin-top:25px;padding:0 0 18px}.list-panel .table-scroll{padding:0 22px 8px}.list-panel table{margin-top:14px}
+.list-note,.list-empty{display:block;font-size:10px;color:#7c879b;padding:4px 22px 0;margin:0}.list-empty{font-size:12px;padding:18px 22px 0}
+.link-button{border:0;background:none;color:#a34f41;font-size:10px;font-weight:650;padding:4px 6px;text-decoration:underline}
+.notice-ok{background:#eef8f4;border-color:#cfe9df;color:#2c6f62}.notice-ok .notice-symbol{border-color:#8cc5b3}
+/* Recipe rows (menu pricing) */
+.recipe-box p{margin:8px 0 0}.recipe-rows{display:grid;gap:6px;margin-top:10px}
+.recipe-row{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:6px}
+.recipe-row select,.recipe-row input:not([type=checkbox]){min-height:36px;padding:7px 8px;font-size:11px}
+.recipe-head{font-size:9px;font-weight:650;color:#6b8a81}
+.recipe-box a,.list-empty a{color:var(--blue)}
+.row-actions form{display:flex;gap:4px;white-space:nowrap}.link-primary{color:var(--blue)}

@@ -50,6 +50,9 @@ def create_app(config=None,enabled_modules=None):
     enabled=set(enabled_modules) if enabled_modules is not None else {m[0] for m in MODULES}
     unknown=enabled-{m[0] for m in MODULES}
     if unknown: raise ValueError(f'Unknown modules: {unknown}')
+    # Saved lists (materials, menus) always need SQL; without a DB file they use a private in-memory database.
+    catalog_db=database or Database.in_memory()
+    if not database: catalog_db.migrate()
     models={}
     # Build providers first; consumers use only the public snapshot contract.
     for name,cls,*_ in MODULES:
@@ -58,7 +61,11 @@ def create_app(config=None,enabled_modules=None):
         repository=SqliteRepository(database,name) if database else repository_class()
         model_class=getattr(importlib.import_module(f'app.modules.{name}.models.service'),cls+'Model')
         options={}
-        if name=='menu_pricing': options={'material_provider':models.get('material_cost')}
+        if name=='material_cost':
+            options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db)}
+        if name=='menu_pricing':
+            recipes=importlib.import_module('app.modules.menu_pricing.repositories.recipes').RecipeStore(catalog_db)
+            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes}
         if name=='cost_optimization':
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}

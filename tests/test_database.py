@@ -34,7 +34,9 @@ class DatabaseTests(unittest.TestCase):
         database.migrate()
         with database.connect() as connection:
             versions = [row['version'] for row in connection.execute('SELECT version FROM schema_version')]
-        self.assertEqual(versions, [1])
+        expected = sorted(int(f.name[:3]) for f in (Path(__file__).resolve().parents[1] / 'app/common/migrations').glob('[0-9][0-9][0-9]_*.sql'))
+        self.assertEqual(versions, expected)
+        self.assertGreaterEqual(len(expected), 2)
 
     def test_repository_round_trip_is_exact_and_isolated(self):
         database = Database(self.path)
