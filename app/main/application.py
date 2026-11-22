@@ -65,11 +65,13 @@ def create_app(config=None,enabled_modules=None):
             options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db)}
         if name=='menu_pricing':
             recipes=importlib.import_module('app.modules.menu_pricing.repositories.recipes').RecipeStore(catalog_db)
-            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes}
+            sales=importlib.import_module('app.modules.menu_pricing.repositories.sales').SalesStore(catalog_db)
+            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes,'sales':sales}
         if name=='cost_optimization':
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
-            options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models)}
+            options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models),
+                     'financials':importlib.import_module('app.modules.cost_optimization.repositories.financials').FinancialStore(catalog_db)}
         models[name]=model_class(repository,**options)
     navigation=[]
     for name,_,title,description,short,number in MODULES:

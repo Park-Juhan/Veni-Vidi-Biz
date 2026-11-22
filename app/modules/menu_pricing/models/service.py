@@ -1,4 +1,6 @@
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
+import re
+from app.common.db import utc_now
 from app.common.model import AnalysisModel
 from app.common.validation import Field, ValidationError
 from app.integrations.contracts import MaterialCatalogProvider, MaterialCostProvider, OperatingCostSnapshot
@@ -15,14 +17,21 @@ class MenuPricingModel(AnalysisModel):
     )
 
     RECIPE_ROWS=6
+    PERIOD=re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
+    # Kasavana-Smith menu engineering: (popular, profitable) -> (label, suggestion)
+    CLASSES={(True,True):('스타','지금 가격·품질을 유지하고 메뉴판에서 눈에 띄게 두세요.'),
+             (True,False):('인기·저수익','원가를 줄이거나 소폭 가격 인상을 검토하세요.'),
+             (False,True):('저인기·고수익','추천·위치·설명으로 노출을 늘려 보세요.'),
+             (False,False):('저인기·저수익','메뉴 정리나 재구성을 검토하세요.')}
 
     def __init__(self,repository,material_provider: MaterialCostProvider | None = None,
-                 material_catalog: MaterialCatalogProvider | None = None,recipes=None):
+                 material_catalog: MaterialCatalogProvider | None = None,recipes=None,sales=None):
         super().__init__(repository)
         self.material_provider=material_provider
         # Recipe costing needs both the saved-material list (material module) and a recipe store.
         self.material_catalog=material_catalog
         self.recipes=recipes if material_catalog else None
+        self.sales=sales if self.recipes else None
 
     def materials(self,workspace):
         return self.material_catalog.list_material_costs(workspace) if self.material_catalog else []
@@ -52,8 +61,8 @@ class MenuPricingModel(AnalysisModel):
         if not items: raise ValidationError('레시피에 재료를 한 줄 이상 입력하세요.')
         return total,items,' + '.join(parts)
 
-    def save_recipe(self,workspace,name,items):
-        return self.recipes.save(workspace,name.strip(),items) if self.recipes else None
+    def save_recipe(self,workspace,name,items,other_cost=Decimal(0)):
+        return self.recipes.save(workspace,name.strip(),items,other_cost) if self.recipes else None
 
     def list_menus(self,workspace):
         """Saved menus with recipe cost at the current saved material prices."""
@@ -72,7 +81,68 @@ class MenuPricingModel(AnalysisModel):
 
     def forget(self,workspace):
         super().forget(workspace)
-        if self.recipes: self.recipes.forget(workspace)
+        if self.recipes: self.recipes.forget(workspace)  # menu_sales go with their menus
+
+    # ---- Monthly sales and menu engineering ----
+    def sales_periods(self,workspace):
+        return self.sales.periods(workspace) if self.sales else []
+
+    def sales_for(self,workspace,period):
+        return self.sales.for_period(workspace,period) if self.sales else {}
+
+    def latest_prices(self,workspace):
+        return self.sales.latest_prices(workspace) if self.sales else {}
+
+    def save_sales(self,workspace,period,rows):
+        """rows: [(menu_id, quantity_text, price_text)] for saved menus. Blank quantity skips the menu."""
+        if not self.sales: return 0
+        if not self.PERIOD.match(period or ''):
+            raise ValidationError('판매 월을 YYYY-MM 형식으로 선택하세요.')
+        names={menu['id']:menu['name'] for menu in self.list_menus(workspace)}
+        clean,errors=[],[]
+        for menu_id,quantity,price in rows:
+            quantity,price=(quantity or '').strip(),(price or '').strip()
+            if menu_id not in names or not quantity: continue
+            try:
+                qty,unit_price=Decimal(quantity),Decimal(price)
+                if not (qty.is_finite() and unit_price.is_finite()) or qty<0 or qty!=qty.to_integral_value() or unit_price<0 or qty>Decimal(10**9) or unit_price>Decimal(10**12):
+                    raise InvalidOperation
+            except (InvalidOperation,ValueError):
+                errors.append(f'{names[menu_id]}: 판매량은 0 이상의 정수, 판매가는 0 이상의 숫자로 입력하세요.'); continue
+            clean.append((menu_id,qty,unit_price))
+        if errors: raise ValidationError(' / '.join(errors))
+        if not clean: raise ValidationError('판매량을 한 개 이상 입력하세요.')
+        self.sales.save_period(workspace,period,clean)
+        return len(clean)
+
+    def delete_sales(self,workspace,period):
+        return bool(self.sales and self.PERIOD.match(period or '') and self.sales.delete_period(workspace,period))
+
+    def menu_engineering(self,workspace,period):
+        """Classify each sold menu by popularity (share >= 70% of an equal share) and
+        unit contribution margin (>= sales-weighted average). Costs use current recipe prices."""
+        sold=self.sales_for(workspace,period)
+        menus=[menu for menu in self.list_menus(workspace) if menu['id'] in sold and sold[menu['id']][0]>0]
+        total_qty=sum((sold[m['id']][0] for m in menus),Decimal(0))
+        if not menus or total_qty==0:
+            return dict(period=period,rows=[],revenue=Decimal(0),material=Decimal(0),contribution=Decimal(0))
+        rows=[]
+        for menu in menus:
+            qty,price=sold[menu['id']]
+            unit_cost=menu['cost']+menu['other_cost']
+            rows.append(dict(name=menu['name'],quantity=qty,share=qty/total_qty*100,price=price,material=menu['cost'],
+                             unit_cost=unit_cost,margin=price-unit_cost,total_margin=(price-unit_cost)*qty,revenue=price*qty))
+        popularity_line=Decimal(100)/len(rows)*Decimal('0.7')
+        average_margin=sum((r['total_margin'] for r in rows),Decimal(0))/total_qty
+        for row in rows:
+            row['popular']=row['share']>=popularity_line
+            row['profitable']=row['margin']>=average_margin
+            row['label'],row['advice']=self.CLASSES[(row['popular'],row['profitable'])]
+        rows.sort(key=lambda r:r['total_margin'],reverse=True)
+        return dict(period=period,rows=rows,quantity=total_qty,popularity_line=popularity_line,average_margin=average_margin,
+                    revenue=sum((r['revenue'] for r in rows),Decimal(0)),
+                    material=sum((r['material']*r['quantity'] for r in rows),Decimal(0)),
+                    contribution=sum((r['total_margin'] for r in rows),Decimal(0)))
 
     def import_material(self,workspace):
         return self.material_provider.export_usage_cost(workspace) if self.material_provider else None
@@ -94,6 +164,13 @@ class MenuPricingModel(AnalysisModel):
                            '모든 가격에서 입력 판매량을 동일하게 가정합니다. 가격에 따른 수요 변화나 실제 적정 시장 가격을 예측하지 않습니다.'])
 
     def export_operating_costs(self, workspace):
+        periods = self.sales_periods(workspace)
+        if periods:
+            analysis = self.menu_engineering(workspace, periods[0])
+            if analysis['rows']:
+                return OperatingCostSnapshot(detail=f"{periods[0]} 판매 기록 (메뉴 {len(analysis['rows'])}개, 레시피 재료비)",
+                                             source='사용자 판매 기록', updated_at=utc_now(),
+                                             monthly_revenue=analysis['revenue'], monthly_material=analysis['material'])
         record = self.latest(workspace)
         if record is None or 'monthly_volume' not in record.result:
             return None

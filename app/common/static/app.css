@@ -66,3 +66,17 @@ td:last-child{min-width:220px}
 .recipe-head{font-size:9px;font-weight:650;color:#6b8a81}
 .recipe-box a,.list-empty a{color:var(--blue)}
 .row-actions form{display:flex;gap:4px;white-space:nowrap}.link-primary{color:var(--blue)}
+/* Monthly sales and menu engineering (menu pricing) */
+.sales-layout{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:22px;padding:18px 22px 0;align-items:start}
+.sales-rows{display:grid;gap:6px}.sales-row{display:grid;grid-template-columns:minmax(0,1fr) 78px 96px;gap:6px;align-items:center}
+.sales-row input:not([type=checkbox]){min-height:36px;padding:7px 8px;font-size:11px}.sales-head{font-size:9px;font-weight:650;color:#9ba5b7}
+.sales-form .list-note{padding:8px 0 0}.sales-actions{display:flex;gap:10px;align-items:center;margin-top:12px}
+.period-links{font-size:10px;color:#7c879b;margin:12px 0 0}.period-links a{color:var(--blue);margin-left:8px}.period-links a[aria-current]{font-weight:750;text-decoration:underline}
+.engineering h3{font-size:13px;margin-bottom:12px}.engineering .table-scroll{padding:0}.engineering .list-note,.engineering .list-empty{padding:8px 0 0}
+.engineering-metrics{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.class-badge{display:inline-block;font-size:9px;font-weight:700;border-radius:5px;padding:2px 7px;white-space:nowrap}
+.class-pp{background:#e2f3ec;color:#2c6f62}.class-pn{background:#fff3e0;color:#9a6a1f}.class-np{background:#e9eefc;color:#3f5fb3}.class-nn{background:#fbe8e5;color:#a34f41}
+@media(max-width:950px){.sales-layout{grid-template-columns:minmax(0,1fr)}}
+/* Month box (cost optimization) */
+.month-box{background:#f4f6fb}.month-row{display:grid;gap:8px}.month-row .field{margin-bottom:0}.month-box p{margin:8px 0 0;font-size:9px;color:#6d778b}
+.month-box .checkbox-label{color:#536079}

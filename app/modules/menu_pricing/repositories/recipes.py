@@ -7,14 +7,15 @@ class RecipeStore:
     def __init__(self, database):
         self.database = database
 
-    def save(self, workspace, name, items):
-        """Create or replace the menu's recipe. items: [(material_id, quantity, unit)]."""
+    def save(self, workspace, name, items, other_cost=Decimal(0)):
+        """Create or replace the menu's recipe. items: [(material_id, quantity, unit)]; other_cost per unit (packaging etc.)."""
         now = utc_now()
         with self.database.connect() as connection:
             self.database.touch_workspace(connection, workspace)
             connection.execute(
-                'INSERT INTO menus (workspace_id, name, updated_at) VALUES (?, ?, ?) '
-                'ON CONFLICT(workspace_id, name) DO UPDATE SET updated_at = excluded.updated_at', (workspace, name, now))
+                'INSERT INTO menus (workspace_id, name, updated_at, other_cost) VALUES (?, ?, ?, ?) '
+                'ON CONFLICT(workspace_id, name) DO UPDATE SET updated_at = excluded.updated_at, other_cost = excluded.other_cost',
+                (workspace, name, now, str(other_cost)))
             menu_id = connection.execute('SELECT id FROM menus WHERE workspace_id = ? AND name = ?', (workspace, name)).fetchone()['id']
             connection.execute('DELETE FROM recipe_items WHERE menu_id = ?', (menu_id,))
             connection.executemany(
@@ -26,7 +27,7 @@ class RecipeStore:
 
     def list(self, workspace):
         with self.database.connect() as connection:
-            menus = connection.execute('SELECT id, name, updated_at FROM menus WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC',
+            menus = connection.execute('SELECT id, name, updated_at, other_cost FROM menus WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC',
                                        (workspace,)).fetchall()
             items = connection.execute(
                 'SELECT r.menu_id, r.material_id, m.name AS material_name, r.quantity, r.unit FROM recipe_items r '
@@ -36,7 +37,8 @@ class RecipeStore:
         for row in items:
             by_menu.setdefault(row['menu_id'], []).append(dict(material_id=row['material_id'], material_name=row['material_name'],
                                                                 quantity=Decimal(row['quantity']), unit=row['unit']))
-        return [dict(id=row['id'], name=row['name'], updated_at=row['updated_at'], items=by_menu.get(row['id'], [])) for row in menus]
+        return [dict(id=row['id'], name=row['name'], updated_at=row['updated_at'], other_cost=Decimal(row['other_cost']),
+                     items=by_menu.get(row['id'], [])) for row in menus]
 
     def get(self, workspace, menu_id):
         return next((menu for menu in self.list(workspace) if menu['id'] == menu_id), None)

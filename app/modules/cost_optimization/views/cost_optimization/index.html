@@ -2,6 +2,15 @@
 {# Each cost item and its saving rate share one row, split into two steps.
    Revenue, rent, material and advertising can be filled from other modules' latest results. #}
 {% block module_inputs %}
+{% if months_enabled %}
+<div class="integration-box month-box">
+  <div class="month-row">
+    <div class="field"><label for="period">기준 월</label><input id="period" name="period" type="month" value="{{ values.get('period') or this_month }}"></div>
+    <label class="checkbox-label"><input type="checkbox" name="save_month" value="yes" {% if values.get('save_month')=='yes' %}checked{% endif %}> 계산하면서 이 달 매출·비용을 월별 기록에 저장</label>
+  </div>
+  <p>불러오기를 누르면 이 달 이전에 저장한 마지막 달의 총비용을 "이전 월 총비용"에 채웁니다.</p>
+</div>
+{% endif %}
 {% if can_import %}
 <div class="integration-box import-box">
   <div class="import-row">
@@ -31,4 +40,23 @@
   dict(title='매출 기준', hint='이번 달 예상 매출과 비교할 이전 월 총비용입니다.', fields=fields|selectattr('group','equalto','기본 조건')|list),
   dict(title='비용과 절감 가정', hint='항목마다 현재 월 비용과 줄일 수 있다고 보는 비율(%)을 한 줄에 입력합니다. 줄이지 않을 항목은 0%로 둡니다.', rows=ns.rows, cols=('월 비용 (원)','절감 (%)')),
 ], values, imported or {}) }}
+{% endblock %}
+{% block module_extra %}
+{% if months_enabled %}
+<section class="panel list-panel" aria-labelledby="months-title">
+  <div class="panel-header"><h2 id="months-title">03 <span>월별 매출·비용 기록</span></h2><span class="small-label">{{ months|length }} MONTHS</span></div>
+  {% if months %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="월별 매출·비용 기록"><table>
+    <thead><tr><th scope="col">월</th><th scope="col">매출 (원)</th><th scope="col">총비용 (원)</th><th scope="col">운영 손익 (원)</th><th scope="col">전월 대비 손익</th><th scope="col">재료비 비율 (%)</th><th scope="col">임대료</th><th scope="col">인건비</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
+    <tbody>{% for m in months %}<tr>
+      <td><b>{{ m.period }}</b></td><td>{{ m.revenue|display }}</td><td>{{ m.total|display }}</td><td>{{ m.profit|display }}</td>
+      <td>{% if m.profit_change is defined %}{{ '+' if m.profit_change > 0 else '' }}{{ m.profit_change|display }}{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td>{{ m.material_ratio|display if m.material_ratio is not none else '-' }}</td><td>{{ m.rent|display }}</td><td>{{ m.labor|display }}</td>
+      <td class="row-actions"><form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="month" value="{{ m.period }}"><button class="link-button link-primary" type="submit" name="action" value="load_month" formnovalidate data-busy-label="불러오는 중…">불러오기</button><button class="link-button" type="submit" name="action" value="delete_month" formnovalidate data-busy-label="삭제 중…" aria-label="{{ m.period }} 기록 삭제">삭제</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <small class="list-note">운영 손익 = 매출 - 6개 비용 항목 합계 (절감 가정 적용 전). 같은 달을 다시 저장하면 덮어씁니다.</small>
+  {% else %}<p class="list-empty">저장한 달이 없습니다. 기준 월을 고르고 "월별 기록에 저장"을 선택해 계산하면 여기에 쌓입니다.</p>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

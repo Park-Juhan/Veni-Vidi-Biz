@@ -56,4 +56,45 @@
   {% else %}<p class="list-empty">저장한 메뉴가 없습니다. 레시피 원가 계산을 선택하고 계산하면 메뉴명으로 저장됩니다.</p>{% endif %}
 </section>
 {% endif %}
+{% if sales_enabled and menus %}
+<section class="panel list-panel" aria-labelledby="sales-title" id="sales">
+  <div class="panel-header"><h2 id="sales-title">04 <span>월별 판매 기록과 메뉴 분석</span></h2><span class="small-label">MENU ENGINEERING</span></div>
+  <div class="sales-layout">
+    <form method="post" action="{{ url_for(module_name+'.index') }}" class="sales-form">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <div class="field"><label for="sales_period">판매 월</label><input id="sales_period" name="sales_period" type="month" value="{{ sales_period }}" required></div>
+      <div class="sales-rows">
+        <div class="sales-row sales-head" aria-hidden="true"><span>메뉴</span><span>판매량 (개)</span><span>평균 판매가 (원)</span></div>
+        {% for row in sales_form_rows %}<div class="sales-row">
+          <span class="pair-label">{{ row.name }}</span>
+          <label class="sr-only" for="sales_qty_{{ row.id }}">{{ row.name }} 판매량</label><input id="sales_qty_{{ row.id }}" name="sales_qty_{{ row.id }}" type="number" min="0" step="1" inputmode="numeric" value="{{ row.quantity }}">
+          <label class="sr-only" for="sales_price_{{ row.id }}">{{ row.name }} 평균 판매가</label><input id="sales_price_{{ row.id }}" name="sales_price_{{ row.id }}" type="number" min="0" step="any" inputmode="decimal" value="{{ row.price }}">
+        </div>{% endfor %}
+      </div>
+      <p class="list-note">판매량을 비워 둔 메뉴는 이 달 기록에서 빠집니다. 같은 달을 다시 저장하면 덮어씁니다.</p>
+      <div class="sales-actions"><button class="step-button step-button-next" type="submit" name="action" value="save_sales" data-busy-label="저장 중…">판매 기록 저장</button>{% if engineering %}<button class="link-button" type="submit" name="action" value="delete_sales" formnovalidate data-busy-label="삭제 중…">이 달 기록 삭제</button>{% endif %}</div>
+      {% if sales_periods %}<p class="period-links">기록된 달: {% for p in sales_periods %}<a href="{{ url_for(module_name+'.index', period=p) }}#sales" {% if p == sales_period %}aria-current="true"{% endif %}>{{ p }}</a>{% endfor %}</p>{% endif %}
+    </form>
+    <div class="engineering">
+      {% if engineering and engineering.rows %}
+      <h3>{{ engineering.period }} 메뉴 분석</h3>
+      <div class="metrics engineering-metrics">
+        <div class="metric"><span>판매 매출</span><strong>{{ engineering.revenue|display }} <small>원</small></strong></div>
+        <div class="metric"><span>공헌이익 합계</span><strong>{{ engineering.contribution|display }} <small>원</small></strong></div>
+        <div class="metric"><span>레시피 재료비 합계</span><strong>{{ engineering.material|display }} <small>원</small></strong></div>
+      </div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="{{ engineering.period }} 메뉴 분석"><table>
+        <thead><tr><th scope="col">메뉴</th><th scope="col">판매량</th><th scope="col">판매 비중 (%)</th><th scope="col">판매가</th><th scope="col">단위 원가</th><th scope="col">단위 공헌이익</th><th scope="col">공헌이익 합계</th><th scope="col">분류</th><th scope="col">제안</th></tr></thead>
+        <tbody>{% for row in engineering.rows %}<tr>
+          <td><b>{{ row.name }}</b></td><td>{{ row.quantity|display }}</td><td>{{ row.share|display }}</td><td>{{ row.price|display }}</td><td>{{ row.unit_cost|display }}</td>
+          <td>{{ row.margin|display }}</td><td>{{ row.total_margin|display }}</td><td><span class="class-badge class-{{ 'p' if row.popular else 'n' }}{{ 'p' if row.profitable else 'n' }}">{{ row.label }}</span></td><td>{{ row.advice }}</td>
+        </tr>{% endfor %}</tbody>
+      </table></div>
+      <small class="list-note">인기 기준: 판매 비중 {{ engineering.popularity_line|display }}% 이상 (메뉴 수로 나눈 균등 비중의 70%). 수익 기준: 단위 공헌이익 {{ engineering.average_margin|display }}원 이상 (판매량 가중 평균). 단위 원가 = 현재 재료 단가 기준 레시피 재료비 + 메뉴 기타 변동비.</small>
+      {% elif engineering %}<p class="list-empty">{{ sales_period }}에는 판매량이 0보다 큰 메뉴가 없습니다.</p>
+      {% else %}<p class="list-empty">{{ sales_period }} 판매 기록이 없습니다. 왼쪽에 메뉴별 판매량과 판매가를 입력하고 저장하면 인기·수익 기준으로 메뉴를 분류합니다.</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
 {% endblock %}
