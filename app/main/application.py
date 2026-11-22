@@ -61,6 +61,8 @@ def create_app(config=None,enabled_modules=None):
         repository=SqliteRepository(database,name) if database else repository_class()
         model_class=getattr(importlib.import_module(f'app.modules.{name}.models.service'),cls+'Model')
         options={}
+        if name=='property':
+            options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db)}
         if name=='material_cost':
             options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db)}
         if name=='menu_pricing':

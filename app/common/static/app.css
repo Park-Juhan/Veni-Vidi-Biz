@@ -80,3 +80,11 @@ td:last-child{min-width:220px}
 /* Month box (cost optimization) */
 .month-box{background:#f4f6fb}.month-row{display:grid;gap:8px}.month-row .field{margin-bottom:0}.month-box p{margin:8px 0 0;font-size:9px;color:#6d778b}
 .month-box .checkbox-label{color:#536079}
+/* Location candidates (property) */
+.candidate-checks{display:grid;gap:6px;margin-bottom:10px}
+.candidate-check{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fcfdff;cursor:pointer}
+.candidate-check input{margin-top:3px}.candidate-check span{display:grid;gap:1px;min-width:0}.candidate-check b{font-size:12px;overflow-wrap:anywhere}.candidate-check small{font-size:9px;color:#7c879b}
+.candidate-check:has(input:checked){border-color:#9db2ef;background:var(--light)}.candidate-check.is-example{cursor:default;background:#f7f8fb}
+.candidate-form{padding:18px 22px 0;border-top:1px solid var(--line);margin-top:14px}.candidate-form h3{font-size:13px;margin-bottom:12px}
+.candidate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 12px}.candidate-grid .wide{grid-column:1/-1}
+tr.is-editing td{background:#f4f7ff}

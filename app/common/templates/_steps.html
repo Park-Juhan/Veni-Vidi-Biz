@@ -16,7 +16,9 @@
   <fieldset class="step-panel" id="step-panel-{{ loop.index }}" role="tabpanel" aria-labelledby="step-tab-{{ loop.index }}" data-step-panel="{{ loop.index0 }}">
     <legend><span class="step-count">{{ loop.index }} / {{ steps|length }}</span>{{ step.title }}</legend>
     {% if step.hint %}<p class="step-hint">{{ step.hint }}</p>{% endif %}
-    {% if step.rows %}
+    {% if step.body %}
+    {{ step.body }}
+    {% elif step.rows %}
     <div class="pair-table">
       <div class="pair-row pair-head" aria-hidden="true"><span>항목</span><span>{{ step.cols[0] }}</span><span>{{ step.cols[1] }}</span></div>
       {% for label, first, second in step.rows %}<div class="pair-row"><span class="pair-label">{{ label }}{% if imported.get(first.name) %}<small class="import-tag" title="{{ imported[first.name] }}">← {{ imported[first.name].split(' · ')[0] }}</small>{% endif %}</span>{{ pair_input(first, values) }}{{ pair_input(second, values) }}</div>{% endfor %}

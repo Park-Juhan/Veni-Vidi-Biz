@@ -1,18 +1,72 @@
 {% extends "module.html" %}
-{# Property input is long (24 fields), so it is split into step panels (one per field group). #}
+{# Property input is split into step panels. Candidates come from the saved list ("내 후보 목록"),
+   or the two fictional examples when nothing is saved. #}
 {% block field_groups %}
 {% from '_steps.html' import render_steps %}
 {% set hints = {
-  '기본 조건': '업종, 임대료 예산, 필요 면적처럼 두 후보에 똑같이 적용할 조건입니다.',
+  '기본 조건': '업종, 임대료 예산, 필요 면적처럼 모든 후보에 똑같이 적용할 조건입니다.',
   '공통 초기 자금': '어느 후보를 고르든 공통으로 드는 초기 비용입니다.',
-  '후보 A': '첫 번째 후보의 임대 조건과 직접 평가한 적합도(1~5)를 입력합니다.',
-  '후보 B': '두 번째 후보의 임대 조건과 직접 평가한 적합도(1~5)를 입력합니다.',
   '평가 가중치': '후보를 비교할 때 각 기준을 얼마나 중요하게 볼지 정합니다. 기본값은 고객층 30, 동선 20, 시설 10, 임대료 15, 초기 자금 15, 면적 10입니다.',
 } %}
+{% set compare = values.get('compare') %}
+{% set body %}
+<input type="hidden" name="compare_sent" value="yes">
+{% if saved_candidates %}
+<div class="candidate-checks">
+  {% for c in saved_candidates %}<label class="candidate-check"><input type="checkbox" name="compare" value="{{ c.id }}" {% if compare is none or c.id in compare %}checked{% endif %}>
+    <span><b>{{ c.name }}</b><small>임대료 {{ c.rent|float|display }}원 · {{ c.area }}㎡ · 적합도 {{ c.fit }}/{{ c.traffic }}/{{ c.facility }}</small></span></label>{% endfor %}
+</div>
+<p class="step-hint">2곳 이상 선택하세요. 후보 추가·수정은 화면 아래 "내 후보 목록"에서 합니다.</p>
+{% else %}
+<div class="candidate-checks">
+  {% for c in example_candidates %}<div class="candidate-check is-example"><span><b>{{ c.name }}</b><small>가상 예시 · 임대료 {{ c.rent|float|display }}원 · {{ c.area }}㎡</small></span></div>{% endfor %}
+</div>
+<p class="step-hint">저장한 후보가 없어 가상 예시 2곳으로 비교합니다. 화면 아래 "내 후보 목록"에서 실제 후보를 추가하세요.</p>
+{% endif %}
+{% endset %}
 {% set ns = namespace(steps=[], seen=[]) %}
 {% for field in fields if field.group not in ns.seen %}
   {% set ns.seen = ns.seen + [field.group] %}
+  {% if field.group == '평가 가중치' %}{% set ns.steps = ns.steps + [dict(title='비교할 후보', hint='이번 계산에서 비교할 후보를 고릅니다.', body=body)] %}{% endif %}
   {% set ns.steps = ns.steps + [dict(title=field.group, hint=hints.get(field.group), fields=fields|selectattr('group','equalto',field.group)|list)] %}
 {% endfor %}
 {{ render_steps(ns.steps, values) }}
+{% endblock %}
+
+{% block module_extra %}
+{% if candidates_enabled %}
+<section class="panel list-panel" aria-labelledby="candidates-title" id="candidates">
+  <div class="panel-header"><h2 id="candidates-title">03 <span>내 후보 목록</span></h2><span class="small-label">{{ saved_candidates|length }} PLACES</span></div>
+  {% if saved_candidates %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="내 후보 목록"><table>
+    <thead><tr><th scope="col">후보</th><th scope="col">월 임대료</th><th scope="col">보증금</th><th scope="col">면적 (㎡)</th><th scope="col">시설·인테리어</th><th scope="col">고객층</th><th scope="col">동선</th><th scope="col">시설</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
+    <tbody>{% for c in saved_candidates %}<tr {% if editing_id == c.id %}class="is-editing"{% endif %}>
+      <td><b>{{ c.name }}</b></td><td>{{ c.rent|float|display }}</td><td>{{ c.deposit|float|display }}</td><td>{{ c.area }}</td><td>{{ c.interior|float|display }}</td><td>{{ c.fit }}</td><td>{{ c.traffic }}</td><td>{{ c.facility }}</td>
+      <td class="row-actions"><form method="post" action="{{ url_for(module_name+'.index') }}#candidates"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="candidate_id" value="{{ c.id }}"><button class="link-button link-primary" type="submit" name="action" value="edit_candidate" formnovalidate data-busy-label="여는 중…">수정</button><button class="link-button" type="submit" name="action" value="delete_candidate" formnovalidate data-busy-label="삭제 중…" aria-label="{{ c.name }} 삭제">삭제</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="list-empty">저장한 후보가 없습니다. 아래에서 후보를 추가하거나 가상 예시 2곳을 넣어 시작하세요.</p>{% endif %}
+  <form method="post" action="{{ url_for(module_name+'.index') }}#candidates" class="candidate-form">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% if editing_id %}<input type="hidden" name="candidate_id" value="{{ editing_id }}">{% endif %}
+    <h3>{{ '후보 수정' if editing_id else '후보 추가' }}</h3>
+    {% set f = candidate_form %}
+    <div class="candidate-grid">
+      <div class="field wide"><label for="cand_name">후보 지역 / 이름</label><input id="cand_name" name="cand_name" type="text" maxlength="120" required value="{{ f.get('name','') }}" placeholder="예: 시청역 2번 출구 1층"></div>
+      <div class="field"><label for="cand_rent">월 임대료 (원)</label><input id="cand_rent" name="cand_rent" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('rent','') }}"></div>
+      <div class="field"><label for="cand_deposit">보증금 (원)</label><input id="cand_deposit" name="cand_deposit" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('deposit','') }}"></div>
+      <div class="field"><label for="cand_area">면적 (㎡)</label><input id="cand_area" name="cand_area" type="number" min="0.1" step="any" inputmode="decimal" required value="{{ f.get('area','') }}"></div>
+      <div class="field"><label for="cand_interior">시설·인테리어 비용 (원)</label><input id="cand_interior" name="cand_interior" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('interior','') }}"></div>
+      <div class="field"><label for="cand_fit">고객층 적합도 (1~5)</label><input id="cand_fit" name="cand_fit" type="number" min="1" max="5" step="1" required value="{{ f.get('fit','3') }}"></div>
+      <div class="field"><label for="cand_traffic">동선·유동인구 (1~5)</label><input id="cand_traffic" name="cand_traffic" type="number" min="1" max="5" step="1" required value="{{ f.get('traffic','3') }}"></div>
+      <div class="field"><label for="cand_facility">시설 조건 (1~5)</label><input id="cand_facility" name="cand_facility" type="number" min="1" max="5" step="1" required value="{{ f.get('facility','3') }}"></div>
+    </div>
+    <div class="sales-actions">
+      <button class="step-button step-button-next" type="submit" name="action" value="save_candidate" data-busy-label="저장 중…">{{ '수정 저장' if editing_id else '후보 저장' }}</button>
+      {% if editing_id %}<a class="link-button link-primary" href="{{ url_for(module_name+'.index') }}#candidates">취소</a>{% endif %}
+      {% if not saved_candidates %}<button class="link-button link-primary" type="submit" name="action" value="add_examples" formnovalidate data-busy-label="추가 중…">가상 예시 2곳 추가</button>{% endif %}
+    </div>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

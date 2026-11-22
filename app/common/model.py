@@ -20,8 +20,12 @@ class AnalysisModel:
         """Delete everything this model stored for the workspace."""
         self.repository.delete(workspace)
 
+    def prepare(self, values, raw):
+        """Hook: add validated inputs that are not simple fields (e.g. a list of candidates)."""
+        return values
+
     def analyze(self, raw, workspace, source="사용자 입력 · 검증되지 않은 가정"):
-        values = validate(self.fields, raw)
+        values = self.prepare(validate(self.fields, raw), raw)
         try:
             result = self.calculate(values)
         except DecimalException as exc:

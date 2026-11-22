@@ -67,8 +67,12 @@ class WebTests(unittest.TestCase):
     def test_security_error_and_escaping(self):
         self.assertEqual(self.client.post('/menu-pricing/',data={}).status_code,400)
         self.assertEqual(self.client.get('/missing').status_code,404)
-        v=model_for('property').defaults()|{'a_name':'<script>alert(1)</script>'}
-        r=self.post(self.client,'/property/',v)
+        # A saved candidate name is shown in the form, list and results; it must be escaped everywhere.
+        self.post(self.client,'/property/',{'action':'save_candidate','cand_name':'<script>alert(1)</script>','cand_rent':'1000000','cand_deposit':'0',
+                                            'cand_area':'30','cand_interior':'0','cand_fit':'3','cand_traffic':'3','cand_facility':'3'})
+        self.post(self.client,'/property/',{'action':'add_examples'})
+        r=self.post(self.client,'/property/',model_for('property').defaults())
+        r=self.client.get('/property/')
         self.assertNotIn('<script>alert(1)</script>',r.get_data(as_text=True))
         self.assertIn('&lt;script&gt;',r.get_data(as_text=True))
         self.assertIn("frame-ancestors 'none'",r.headers['Content-Security-Policy'])

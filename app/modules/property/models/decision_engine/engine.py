@@ -17,14 +17,14 @@ CRITERIA = (
 def _cost_conditions(board):
     v=board.inputs
     common=v['equipment']+v['initial_material']+v['other_startup']
-    for key in ('a','b'):
-        budget_ok=v[key+'_rent'] <= v['budget']
-        area_ok=v[key+'_area'] >= v['min_area']
-        startup=v[key+'_deposit']+v[key+'_rent']+v[key+'_interior']+common
+    for c in v['candidates']:
+        budget_ok=c['rent'] <= v['budget']
+        area_ok=c['area'] >= v['min_area']
+        startup=c['deposit']+c['rent']+c['interior']+common
         board.candidates.append(dict(
-            key=key,name=v[key+'_name'],startup=startup,meets=budget_ok and area_ok,
+            input=c,name=c['name'],startup=startup,meets=budget_ok and area_ok,
             notes=['임대료 예산 이내' if budget_ok else '임대료 예산 초과','필요 면적 충족' if area_ok else '필요 면적 미달'],
-            values=dict(fit=v[key+'_fit'],traffic=v[key+'_traffic'],facility=v[key+'_facility'],rent=v[key+'_rent'],startup=startup,area=v[key+'_area'])))
+            values=dict(fit=c['fit'],traffic=c['traffic'],facility=c['facility'],rent=c['rent'],startup=startup,area=c['area'])))
 
 
 def _topsis(board):
