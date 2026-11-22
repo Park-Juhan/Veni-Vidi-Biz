@@ -1,2 +1,54 @@
 {% extends "module.html" %}
-{# Module-specific view extension point. #}
+{# Recommendation form from module.html; below it, a log of campaigns actually run and their results. #}
+{% block module_extra %}
+{% if campaigns_enabled %}
+<section class="panel list-panel" aria-labelledby="campaigns-title" id="campaigns">
+  <div class="panel-header"><h2 id="campaigns-title">03 <span>내 캠페인 기록과 성과 비교</span></h2><span class="small-label">{{ campaigns|length }} CAMPAIGNS</span></div>
+  {% if channel_summary %}
+  <div class="campaign-summary">
+    <h3>채널별 성과 (신규 고객 1명당 비용이 낮은 순)</h3>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="채널별 성과"><table>
+      <thead><tr><th scope="col">채널</th><th scope="col">실행</th><th scope="col">총비용 (원)</th><th scope="col">측정한 신규 고객</th><th scope="col">신규 1명당 비용 (원)</th><th scope="col">매출 변화 기준 수익률 (%)</th></tr></thead>
+      <tbody>{% for s in channel_summary %}<tr><td><b>{{ s.channel }}</b></td><td>{{ s.runs }}회</td><td>{{ s.cost|display }}</td><td>{{ s.customers|display if s.customers else '-' }}</td><td>{{ s.cac|display if s.cac is not none else '-' }}</td><td>{{ s.roi|display if s.roi is not none else '-' }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endif %}
+  {% if campaigns %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="캠페인 기록"><table>
+    <thead><tr><th scope="col">캠페인</th><th scope="col">채널</th><th scope="col">기간</th><th scope="col">총비용</th><th scope="col">신규 고객</th><th scope="col">1명당 비용</th><th scope="col">매출 변화</th><th scope="col">수익률 (%)</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
+    <tbody>{% for c in campaigns %}<tr {% if editing_id == c.id %}class="is-editing"{% endif %}>
+      <td><b>{{ c.name }}</b>{% if c.note %}<small class="cell-note">{{ c.note }}</small>{% endif %}</td><td>{{ c.channel }} · {{ c.owner }}</td>
+      <td>{{ c.started_on }} ~ {{ c.ended_on }} ({{ c.days }}일)</td><td>{{ c.cost_value|display }}</td>
+      <td>{{ c.customers|display if c.customers is not none else '-' }}</td><td>{{ c.cac|display if c.cac is not none else '-' }}</td>
+      <td>{{ ('+' if c.lift > 0 else '') ~ (c.lift|display) if c.lift is not none else '-' }}</td><td>{{ c.roi|display if c.roi is not none else '-' }}</td>
+      <td class="row-actions"><form method="post" action="{{ url_for(module_name+'.index') }}#campaigns"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="campaign_id" value="{{ c.id }}"><button class="link-button link-primary" type="submit" name="action" value="edit_campaign" formnovalidate data-busy-label="여는 중…">수정</button><button class="link-button" type="submit" name="action" value="delete_campaign" formnovalidate data-busy-label="삭제 중…" aria-label="{{ c.name }} 삭제">삭제</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <small class="list-note">1명당 비용 = 총비용 ÷ 신규 고객 수. 수익률 = (캠페인 기간 매출 − 전 기간 매출 − 총비용) ÷ 총비용. 매출 변화에는 계절·날씨 등 다른 요인도 섞이므로 참고값입니다.</small>
+  {% else %}<p class="list-empty">아직 기록한 캠페인이 없습니다. 실제로 진행한 홍보를 기록하면 채널별 성과를 비교하고, 위 추천 결과에도 함께 보여 줍니다.</p>{% endif %}
+  <form method="post" action="{{ url_for(module_name+'.index') }}#campaigns" class="candidate-form">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% if editing_id %}<input type="hidden" name="campaign_id" value="{{ editing_id }}">{% endif %}
+    <h3>{{ '캠페인 수정' if editing_id else '캠페인 기록' }}</h3>
+    {% set f = campaign_form %}
+    <div class="candidate-grid">
+      <div class="field wide"><label for="camp_name">캠페인 이름</label><input id="camp_name" name="camp_name" type="text" maxlength="120" required value="{{ f.get('name','') }}" placeholder="예: 11월 첫 방문 쿠폰"></div>
+      <div class="field"><label for="camp_channel">채널</label><select id="camp_channel" name="camp_channel">{% for ch in channel_choices %}<option {% if f.get('channel')==ch %}selected{% endif %}>{{ ch }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="camp_owner">실행 주체</label><select id="camp_owner" name="camp_owner">{% for o in ('직접','외부 업체') %}<option {% if f.get('owner')==o %}selected{% endif %}>{{ o }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="camp_started_on">시작일</label><input id="camp_started_on" name="camp_started_on" type="date" required value="{{ f.get('started_on') or today }}"></div>
+      <div class="field"><label for="camp_ended_on">종료일</label><input id="camp_ended_on" name="camp_ended_on" type="date" required value="{{ f.get('ended_on') or today }}"></div>
+      <div class="field"><label for="camp_cost">총비용 (원)</label><input id="camp_cost" name="camp_cost" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('cost','') }}"></div>
+      <div class="field"><label for="camp_hours_per_week">주당 운영 시간</label><input id="camp_hours_per_week" name="camp_hours_per_week" type="number" min="0" max="168" step="any" inputmode="decimal" required value="{{ f.get('hours_per_week','0') }}"></div>
+      <div class="field"><label for="camp_new_customers">신규 고객 수 (선택)</label><input id="camp_new_customers" name="camp_new_customers" type="number" min="0" step="1" inputmode="numeric" value="{{ f.get('new_customers','') }}"><small>쿠폰 사용 수, 첫 방문 응답 등으로 센 값</small></div>
+      <div class="field"><label for="camp_revenue_before">캠페인 전 같은 기간 매출 (선택)</label><input id="camp_revenue_before" name="camp_revenue_before" type="number" min="0" step="any" inputmode="decimal" value="{{ f.get('revenue_before','') }}"></div>
+      <div class="field"><label for="camp_revenue_after">캠페인 기간 매출 (선택)</label><input id="camp_revenue_after" name="camp_revenue_after" type="number" min="0" step="any" inputmode="decimal" value="{{ f.get('revenue_after','') }}"></div>
+      <div class="field wide"><label for="camp_note">메모 (선택)</label><input id="camp_note" name="camp_note" type="text" maxlength="200" value="{{ f.get('note','') }}"></div>
+    </div>
+    <div class="sales-actions">
+      <button class="step-button step-button-next" type="submit" name="action" value="save_campaign" data-busy-label="저장 중…">{{ '수정 저장' if editing_id else '캠페인 저장' }}</button>
+      {% if editing_id %}<a class="link-button link-primary" href="{{ url_for(module_name+'.index') }}#campaigns">취소</a>{% endif %}
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -63,6 +63,8 @@ def create_app(config=None,enabled_modules=None):
         options={}
         if name=='property':
             options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db)}
+        if name=='marketing':
+            options={'campaigns':importlib.import_module('app.modules.marketing.repositories.campaigns').CampaignStore(catalog_db)}
         if name=='material_cost':
             options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db)}
         if name=='menu_pricing':

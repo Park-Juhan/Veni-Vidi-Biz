@@ -88,3 +88,6 @@ td:last-child{min-width:220px}
 .candidate-form{padding:18px 22px 0;border-top:1px solid var(--line);margin-top:14px}.candidate-form h3{font-size:13px;margin-bottom:12px}
 .candidate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 12px}.candidate-grid .wide{grid-column:1/-1}
 tr.is-editing td{background:#f4f7ff}
+/* Campaign log (marketing) */
+.campaign-summary{padding:16px 22px 4px}.campaign-summary h3{font-size:13px;margin-bottom:4px}.campaign-summary .table-scroll{padding:0}
+.cell-note{display:block;font-size:9px;color:#8b95a8;white-space:normal;max-width:220px}
