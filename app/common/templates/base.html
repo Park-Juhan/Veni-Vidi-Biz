@@ -16,10 +16,10 @@
     <a href="{{ url_for('home') }}" class="nav-item {{ 'active' if module_name=='home' else '' }}" {% if module_name=='home' %}aria-current="page"{% endif %}><span class="nav-icon">⌂</span>워크스페이스</a>
     {% for item in navigation %}<a href="{{ url_for(item.name+'.index') }}" class="nav-item {{ 'active' if module_name==item.name else '' }}" {% if module_name==item.name %}aria-current="page"{% endif %}><span class="nav-icon">{{ item.number }}</span>{{ item.title }}</a>{% endfor %}
   </nav>
-  <div class="sidebar-note"><span class="status-dot"></span> 1차 프로토타입<p>작은 계산에서 시작하는<br>더 나은 사업의 다음 선택.</p><small>가상 예시 · 메모리 임시 저장</small></div>
+  <div class="sidebar-note"><span class="status-dot"></span> 1차 프로토타입<p>작은 계산에서 시작하는<br>더 나은 사업의 다음 선택.</p><small>가상 예시 · {{ 'SQLite 파일 저장' if persistent else '메모리 임시 저장' }}</small></div>
 </aside>
 <div class="workspace">
-  <header class="topbar"><span>내 비즈니스 <span class="muted"> / &nbsp; {{ title|default('워크스페이스') }}</span></span><span class="user-chip"><span class="avatar">P</span>게스트 워크스페이스</span></header>
+  <header class="topbar"><span>내 비즈니스 <span class="muted"> / &nbsp; {{ title|default('워크스페이스') }}</span></span><a class="user-chip" href="{{ url_for('workspace') }}" {% if module_name=='workspace' %}aria-current="page"{% endif %}><span class="avatar">P</span>게스트 작업 공간 · 코드 보기</a></header>
   <main id="main">{% block content %}{% endblock %}</main>
   <footer>VENI VIDI BIZ <span>의사결정을 위한 참고 계산 · 실제 시장 자료 미연결</span></footer>
 </div>

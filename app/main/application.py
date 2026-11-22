@@ -1,10 +1,14 @@
 """Composition root: only this layer wires modules and public interfaces together."""
 import importlib
 import os
+from pathlib import Path
+import re
 from secrets import token_hex
 from decimal import Decimal
-from flask import Flask, render_template
-from app.common.web import csrf_token
+from flask import Flask, abort, redirect, render_template, request, session, url_for
+from app.common.db import Database
+from app.common.repository import SqliteRepository
+from app.common.web import csrf_token, verify_csrf, workspace_id
 from app.common.time import korean_time
 
 
@@ -17,11 +21,32 @@ MODULES=(
 )
 
 
+ROOT=Path(__file__).resolve().parents[2]
+WORKSPACE_CODE=re.compile(r'^[0-9a-f]{32}$')
+
+
+def persistent_secret(folder):
+    """Reuse one secret per data folder so sessions (and their workspaces) survive restarts."""
+    path=Path(folder)/'secret_key'
+    if not path.exists():
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_text(token_hex(32),encoding='ascii')
+    return path.read_text(encoding='ascii').strip()
+
+
 def create_app(config=None,enabled_modules=None):
     app=Flask(__name__,template_folder='../common/templates',static_folder='../common/static',static_url_path='/static')
-    app.config.update(SECRET_KEY=os.environ.get('VENI_SECRET_KEY') or token_hex(32),MAX_CONTENT_LENGTH=64*1024,
-                      SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Strict')
+    app.config.update(MAX_CONTENT_LENGTH=64*1024,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Strict',RETENTION_DAYS=365)
     if config: app.config.update(config)
+    # Tests and explicit DATABASE=None keep the in-memory store; normal runs use a SQLite file.
+    default_db=None if app.config.get('TESTING') else os.environ.get('VENI_DATABASE') or ROOT/'instance'/'veni.db'
+    database_path=app.config.get('DATABASE',default_db)
+    database=Database(database_path) if database_path else None
+    if database:
+        database.migrate()
+        database.purge_inactive(app.config['RETENTION_DAYS'])
+    if not app.config.get('SECRET_KEY'):
+        app.config['SECRET_KEY']=os.environ.get('VENI_SECRET_KEY') or (persistent_secret(database.path.parent) if database else token_hex(32))
     enabled=set(enabled_modules) if enabled_modules is not None else {m[0] for m in MODULES}
     unknown=enabled-{m[0] for m in MODULES}
     if unknown: raise ValueError(f'Unknown modules: {unknown}')
@@ -30,6 +55,7 @@ def create_app(config=None,enabled_modules=None):
     for name,cls,*_ in MODULES:
         if name not in enabled: continue
         repository_class=getattr(importlib.import_module(f'app.modules.{name}.repositories.memory'),cls+'Repository')
+        repository=SqliteRepository(database,name) if database else repository_class()
         model_class=getattr(importlib.import_module(f'app.modules.{name}.models.service'),cls+'Model')
         options={}
         if name=='menu_pricing': options={'material_provider':models.get('material_cost')}
@@ -37,7 +63,7 @@ def create_app(config=None,enabled_modules=None):
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
             options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models)}
-        models[name]=model_class(repository_class(),**options)
+        models[name]=model_class(repository,**options)
     navigation=[]
     for name,_,title,description,short,number in MODULES:
         if name not in enabled: continue
@@ -53,13 +79,54 @@ def create_app(config=None,enabled_modules=None):
 
     @app.context_processor
     def context():
-        return dict(navigation=navigation,csrf_token=csrf_token)
+        return dict(navigation=navigation,csrf_token=csrf_token,persistent=database is not None)
 
     app.add_template_filter(korean_time,'korean_time')
 
     @app.get('/')
     def home():
         return render_template('home.html',module_name='home')
+
+    def workspace_has_data(code):
+        if database: return database.workspace_exists(code)
+        return any(model.latest(code) is not None for model in models.values())
+
+    @app.route('/workspace/',methods=['GET','POST'])
+    def workspace():
+        """Show this browser's workspace code, open another workspace by code, or delete all data."""
+        current=workspace_id()
+        message=error=None
+        status=200
+        if request.method=='POST':
+            verify_csrf()
+            action=request.form.get('action')
+            if action=='open':
+                code=request.form.get('code','').strip().lower().replace('-','').replace(' ','')
+                if not WORKSPACE_CODE.match(code):
+                    error,status='작업 공간 코드는 32자리 영문(a~f)·숫자입니다. 하이픈은 있어도 됩니다.',422
+                elif code==current:
+                    message='이미 이 작업 공간을 사용하고 있습니다.'
+                elif not workspace_has_data(code):
+                    error,status='해당 코드로 저장된 데이터가 없습니다. 코드를 다시 확인하세요.',404
+                else:
+                    session['workspace']=code
+                    return redirect(url_for('workspace',opened=1),code=303)
+            elif action=='delete' and request.form.get('confirm')=='yes':
+                for model in models.values():
+                    model.forget(current)
+                session.pop('workspace',None)
+                return redirect(url_for('workspace',deleted=1),code=303)
+            elif action=='delete':
+                error,status='삭제하려면 확인란을 선택하세요.',422
+            else:
+                abort(400)
+        if request.args.get('opened'): message='작업 공간을 열었습니다. 각 모듈에서 저장된 결과를 확인하세요.'
+        if request.args.get('deleted'): message='이전 작업 공간의 데이터를 모두 삭제했습니다. 새 작업 공간을 사용합니다.'
+        code=workspace_id()
+        return render_template('workspace.html',module_name='workspace',title='작업 공간',code=code,
+                               display_code='-'.join(code[i:i+4] for i in range(0,32,4)),
+                               has_data=workspace_has_data(code),message=message,error=error,
+                               retention_days=app.config['RETENTION_DAYS']),status
 
     @app.errorhandler(400)
     @app.errorhandler(404)

@@ -46,3 +46,11 @@ td:last-child{min-width:220px}
 .import-result ul{margin:6px 0 0;padding-left:16px;line-height:1.7}.import-result p{margin:6px 0 0;color:#8a6d3b}
 .import-tag{display:block;font-size:9px;font-weight:600;color:var(--teal);margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
 .extra-lead{font-size:11px;color:#6d778b;margin:-10px 0 14px;line-height:1.7}
+/* Workspace page */
+.workspace-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:start}
+.workspace-card{padding:22px}.workspace-card h2{font-size:15px;margin-bottom:12px}
+.workspace-code{font-family:Consolas,'Courier New',monospace;font-size:15px;font-weight:700;letter-spacing:.5px;background:var(--light);color:#2e4f9e;border-radius:8px;padding:12px 14px;overflow-wrap:anywhere;user-select:all}
+.workspace-note{font-size:11px;color:#6d778b;line-height:1.8;margin:10px 0 0}
+.danger-card{border-color:#f4d5d0}.danger-card .checkbox-label{display:flex;gap:8px;align-items:center;font-size:11px;color:#a34f41;margin:14px 0 4px}
+.danger-button{width:100%;margin-top:10px;background:#fff;border:1px solid #e3a99f;color:#a34f41;border-radius:7px;padding:12px;font-size:12px;font-weight:650}.danger-button:hover{background:#fff1ef}
+.form-footnote a{color:var(--blue)}

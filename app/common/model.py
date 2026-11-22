@@ -16,6 +16,10 @@ class AnalysisModel:
     def latest(self, workspace):
         return self.repository.latest(workspace)
 
+    def forget(self, workspace):
+        """Delete everything this model stored for the workspace."""
+        self.repository.delete(workspace)
+
     def analyze(self, raw, workspace, source="사용자 입력 · 검증되지 않은 가정"):
         values = validate(self.fields, raw)
         try:

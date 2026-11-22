@@ -11,7 +11,7 @@
       <div class="field"><label for="data_mode">입력 데이터 구분</label><select id="data_mode" name="data_mode"><option value="example" {% if values.get('data_mode')!='user' %}selected{% endif %}>가상 예시 / 연습용 가정</option><option value="user" {% if values.get('data_mode')=='user' %}selected{% endif %}>사용자 입력 / 실측 검증 안 됨</option></select></div>
       {% block module_inputs %}{% endblock %}
       {% block field_groups %}{% from '_fields.html' import render_field %}{% for group,items in fields|groupby('group',case_sensitive=True) %}<fieldset><legend>{{ group }}</legend><div class="fields-grid">{% for field in items %}{{ render_field(field, values) }}{% endfor %}</div></fieldset>{% endfor %}{% endblock %}
-      <button class="primary-button" type="submit">계산하고 대안 비교하기 <span>→</span></button><p class="form-footnote">최근 결과 1건을 임시 저장합니다. 서버 재시작 시 사라집니다.</p>
+      <button class="primary-button" type="submit">계산하고 대안 비교하기 <span>→</span></button><p class="form-footnote">{% if persistent %}계산 결과를 이 작업 공간에 저장합니다. <a href="{{ url_for('workspace') }}">작업 공간 코드 보기</a>{% else %}최근 결과 1건을 임시 저장합니다. 서버 재시작 시 사라집니다.{% endif %}</p>
     </form>
   </section>
   <section class="output-panel" aria-label="분석 결과"><div class="panel-header result-header"><h2>02 <span>분석 결과</span></h2><span class="small-label">RESULT</span></div>

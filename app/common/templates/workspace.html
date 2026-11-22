@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}작업 공간 · VENI VIDI BIZ{% endblock %}
+{% block content %}
+<div class="module-heading"><div><div class="eyebrow">WORKSPACE</div><h1>작업 공간</h1><p class="lead">로그인 없이 이 브라우저의 계산 결과를 보관합니다. 코드를 알면 다른 브라우저에서도 같은 데이터를 열 수 있습니다.</p></div></div>
+{% if message %}<div class="notice" role="status"><span class="notice-symbol">✓</span><div><strong>{{ message }}</strong></div></div>{% endif %}
+{% if error %}<div class="error-banner" role="alert"><strong>확인해 주세요.</strong><p>{{ error }}</p></div>{% endif %}
+<div class="workspace-grid">
+  <section class="panel workspace-card">
+    <h2>내 작업 공간 코드</h2>
+    <p class="workspace-code" id="workspace-code">{{ display_code }}</p>
+    <p class="workspace-note">{% if has_data %}저장된 계산 결과가 있습니다.{% else %}아직 저장된 결과가 없습니다. 모듈에서 계산하면 이 코드로 저장됩니다.{% endif %}</p>
+    <p class="workspace-note">이 코드는 비밀번호와 같습니다. 코드를 아는 사람은 누구나 이 데이터를 열 수 있으니 필요한 사람에게만 알려주세요.</p>
+    {% if persistent %}<p class="workspace-note">마지막 사용 후 {{ retention_days }}일 동안 사용하지 않으면 자동으로 삭제됩니다.</p>
+    {% else %}<p class="workspace-note">현재 메모리 저장 모드입니다. 서버를 다시 시작하면 데이터가 사라집니다.</p>{% endif %}
+  </section>
+  <section class="panel workspace-card">
+    <h2>다른 작업 공간 열기</h2>
+    <form method="post" action="{{ url_for('workspace') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="open">
+      <div class="field"><label for="code">작업 공간 코드</label><input id="code" name="code" type="text" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="0000-0000-0000-…"></div>
+      <button class="primary-button" type="submit">이 코드로 열기 <span>→</span></button>
+      <p class="workspace-note">지금 작업 공간의 데이터는 지워지지 않습니다. 현재 코드를 적어 두면 나중에 다시 열 수 있습니다.</p>
+    </form>
+  </section>
+  <section class="panel workspace-card danger-card">
+    <h2>내 데이터 삭제</h2>
+    <form method="post" action="{{ url_for('workspace') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete">
+      <p class="workspace-note">이 작업 공간에 저장된 모든 모듈의 계산 결과와 이력을 삭제하고, 새 작업 공간으로 바꿉니다. 되돌릴 수 없습니다.</p>
+      <label class="checkbox-label"><input type="checkbox" name="confirm" value="yes" required> 되돌릴 수 없다는 것을 확인했습니다.</label>
+      <button class="danger-button" type="submit">모든 데이터 삭제</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

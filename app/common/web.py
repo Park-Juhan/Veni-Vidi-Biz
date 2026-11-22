@@ -18,6 +18,12 @@ def csrf_token():
     return session['csrf']
 
 
+def verify_csrf():
+    token=request.form.get('csrf','')
+    if not token.isascii() or not hmac.compare_digest(token,csrf_token()):
+        abort(400,description='요청 확인 정보가 만료되었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
+
+
 def bind_module(name,model,template,title,description,number,prepare_submission=None,handle_action=None,extra_context=None):
     blueprint=Blueprint(name,__name__,url_prefix='/'+name.replace('_','-'),template_folder='../modules/'+name+'/views')
 
@@ -33,9 +39,7 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
         if example:
             values=model.defaults(); record=None
         if request.method=='POST':
-            token=request.form.get('csrf','')
-            if not token.isascii() or not hmac.compare_digest(token,csrf_token()):
-                abort(400,description='요청 확인 정보가 만료되었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
+            verify_csrf()
             values={field.name: request.form.get(field.name,'') for field in model.fields}
             values['data_mode']='user' if request.form.get('data_mode')=='user' else 'example'
             action=request.form.get('action','')

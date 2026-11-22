@@ -35,7 +35,7 @@ class StandaloneModuleChecks:
         client = self.standalone_client()
         rules = {rule.rule for rule in client.application.url_map.iter_rules()}
         self.assertEqual(
-            rules, {'/', self.module_path, '/static/<path:filename>'}
+            rules, {'/', '/workspace/', self.module_path, '/static/<path:filename>'}
         )
         response = client.get(self.module_path)
         self.assertEqual(response.status_code, 200)
