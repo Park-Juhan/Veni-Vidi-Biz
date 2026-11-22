@@ -15,6 +15,8 @@ class MaterialCostModel(AnalysisModel):
         Field('unit','구매 단위','kg','select',choices=tuple(UNITS)),
         Field('usage','1회 사용량','18',maximum='1000000000'),
         Field('usage_unit','사용량 단위','g','select',choices=tuple(UNITS)),
+        Field('yield_rate','수율 (%)','100',minimum='1',maximum='100',
+              help='손질·폐기 후 실제로 쓸 수 있는 비율. 예: 껍질·꼭지를 버려 70%만 쓰면 70. 손실이 없으면 100.'),
     )
 
     def calculate(self,v):
@@ -25,16 +27,21 @@ class MaterialCostModel(AnalysisModel):
         total=v['purchase_price']*v['quantity']
         amount=v['quantity']*factor
         used=v['usage']*use_factor
-        if used>amount:
-            raise ValidationError('1회 사용량이 총 구매량보다 큽니다.')
+        usable=amount*v['yield_rate']/100
+        if used>usable:
+            raise ValidationError('1회 사용량이 수율을 반영한 사용 가능량보다 큽니다.')
         base=total/amount
-        cost=base*used
+        # Waste raises the cost of every usable unit: price per usable unit = price per bought unit / yield.
+        effective=base*100/v['yield_rate']
+        cost=effective*used
+        loss=cost-base*used
         base_unit={'mass':'g','volume':'mL','count':'개'}[dimension]
-        return dict(metrics=[('총 구매 비용',total,'원'),('기준 단위 원가',base,'원 / '+base_unit),('1회 사용 원가',cost,'원')],
-                    columns=['재료','총 구매량','기준 단가 (원)','1회 사용량','사용 원가 (원)'],
-                    rows=[[v['name'],f"{amount} {base_unit}",base,f"{used} {base_unit}",cost]],
-                    chart=[('사용분 원가',cost),('남은 재료 원가',total-cost)],chart_title='구매 비용 구성',
-                    notes=['총 구매 비용 = 구매 단가 × 구매 수량. 사용 원가 = 기준 단위 원가 × 1회 사용량.', '밀도·폐기율은 반영하지 않습니다. 질량과 부피를 서로 변환하지 않습니다.', '메뉴 모듈로 가져오면 이 재료의 1회 사용 원가를 재료비로 사용합니다. 여러 재료의 레시피 합산은 후속 기능입니다.'],
+        return dict(metrics=[('총 구매 비용',total,'원'),('기준 단위 원가',base,'원 / '+base_unit),('수율 반영 단위 원가',effective,'원 / '+base_unit),('1회 사용 원가',cost,'원')],
+                    columns=['재료','총 구매량','수율 (%)','사용 가능량','기준 단가 (원)','수율 반영 단가 (원)','1회 사용량','사용 원가 (원)'],
+                    rows=[[v['name'],f"{amount} {base_unit}",v['yield_rate'],f"{usable} {base_unit}",base,effective,f"{used} {base_unit}",cost]],
+                    chart=[('1회 사용분 원가',base*used),('1회 사용분의 손질·폐기 손실',loss),('남은 재료 원가',total-cost)],chart_title='구매 비용 구성',
+                    notes=['총 구매 비용 = 구매 단가 × 구매 수량. 사용 원가 = 기준 단위 원가 × 1회 사용량.', '수율 반영 단위 원가 = 기준 단위 원가 ÷ 수율. 손질·폐기로 버리는 양의 비용을 실제 사용하는 양이 부담합니다.',
+                           '수율은 사용자가 입력한 값입니다. 재료·손질 방법에 따라 다르니 실제로 측정해 보는 것이 좋습니다. 밀도는 반영하지 않으며 질량과 부피를 서로 변환하지 않습니다.', '메뉴 모듈로 가져오면 이 재료의 1회 사용 원가를 재료비로 사용합니다. 여러 재료의 레시피 합산은 후속 기능입니다.'],
                     usage_cost=cost)
 
     def export_usage_cost(self,workspace):

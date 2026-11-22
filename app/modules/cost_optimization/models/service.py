@@ -3,6 +3,7 @@ from app.common.model import AnalysisModel
 from app.common.validation import Field
 from app.common.time import korean_time
 from .decision_engine.engine import compare_savings
+from .sensitivity import sensitivity_table
 
 
 CATEGORIES=(('rent','임대료','1500000','0'),('labor','인건비','3000000','0'),('material','재료비','2500000','10'),('utilities','공과금·관리비','400000','5'),('advertising','광고비','300000','10'),('other','기타 고정비 (세금·이자 등)','300000','0'))
@@ -60,4 +61,4 @@ class CostOptimizationModel(AnalysisModel):
         return dict(metrics=[('월 총비용',total,'원'),('절감 전 운영 손익',profit,'원'),('가정상 월 절감액',savings,'원'),('절감 후 운영 손익',profit+savings,'원'),('손익분기 월 매출',breakeven if breakeven is not None else '산출 불가','원' if breakeven is not None else ''),('이전 월 대비 비용 증감',total-v['previous'],'원')],
                     columns=['항목','현재 비용 (원)','비중 (%)','절감 가정 (%)','월 절감액 (원)','절감 후 비용 (원)','검토할 대안·위험'],
                     rows=[[c['label'],c['cost'],c['share'],c['rate'],c['saving'],c['cost']-c['saving'],c['caution']] for c in decision['candidates']],
-                    chart=[(label,v[key]) for key,label,*_ in CATEGORIES],chart_title='현재 월 비용 구성',notes=notes,trace=decision['trace'],total=total,savings=savings,breakeven=breakeven)
+                    chart=[(label,v[key]) for key,label,*_ in CATEGORIES],extra_tables=[sensitivity_table(v,total)],chart_title='현재 월 비용 구성',notes=notes,trace=decision['trace'],total=total,savings=savings,breakeven=breakeven)

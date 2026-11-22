@@ -72,6 +72,17 @@ class CostOptimizationTests(StandaloneModuleChecks, unittest.TestCase):
         html=self.standalone_client().get(self.module_path).get_data(as_text=True)
         self.assertNotIn('다른 모듈에서 불러오기',html)
 
+    def test_sensitivity_moves_one_factor_at_a_time(self):
+        model=model_for('cost_optimization');table=model.analyze(model.defaults(),'a').result['extra_tables'][0]
+        rows={row[0]:row for row in table['rows']}
+        # Revenue 12M, material 2.5M (variable), total cost 8M -> base profit 4M.
+        revenue=rows['매출 (재료비 함께 변동)']
+        self.assertEqual(revenue[3],Decimal(4000000))
+        self.assertEqual(revenue[1],Decimal(2100000))   # 9.6M - (8M - 0.5M)
+        self.assertEqual(revenue[5],Decimal(5900000))   # 14.4M - (8M + 0.5M)
+        self.assertEqual(rows['임대료'][5],Decimal(3700000))  # rent 1.5M +20%
+        self.assertIn("'매출 (재료비 함께 변동)'",table['lead'])
+
 
 if __name__ == "__main__":
     unittest.main()

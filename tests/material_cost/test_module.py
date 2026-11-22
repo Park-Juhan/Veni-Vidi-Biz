@@ -30,6 +30,18 @@ class MaterialCostTests(StandaloneModuleChecks, unittest.TestCase):
             with self.subTest(changes=changes),self.assertRaises(ValidationError):
                 model.analyze(model.defaults()|changes,'a')
 
+    def test_yield_raises_usable_unit_cost(self):
+        model=model_for('material_cost')
+        result=model.analyze(model.defaults()|{'yield_rate':'80'},'a').result
+        self.assertEqual(result['usage_cost'],Decimal(450))   # 360 / 0.8
+        self.assertEqual(dict(result['chart'])['1회 사용분의 손질·폐기 손실'],Decimal(90))
+        # 2kg bought at 1% yield leaves 20g usable, so 21g cannot be used.
+        with self.assertRaises(ValidationError):
+            model.analyze(model.defaults()|{'yield_rate':'1','usage':'21'},'a')
+        for bad in ('0','101'):
+            with self.subTest(yield_rate=bad),self.assertRaises(ValidationError):
+                model.analyze(model.defaults()|{'yield_rate':bad},'a')
+
 
 if __name__ == "__main__":
     unittest.main()
