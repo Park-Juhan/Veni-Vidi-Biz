@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from decimal import Decimal
 from app.common.model import AnalysisModel
 from app.common.validation import Field, ValidationError, validate
@@ -23,12 +24,67 @@ class CostOptimizationModel(AnalysisModel):
     PERIOD=re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
     MONTH_ITEMS=('revenue','rent','labor','material','utilities','advertising','other')
 
-    def __init__(self,repository,cost_providers=(),financials=None):
+    DEFAULT_BENCHMARK=('음식점 및 주점업','서울특별시')
+    # (label, this module's cost keys, IndustryBenchmark ratio attribute)
+    BENCHMARK_ROWS=(('재료비 ↔ 매출원가',('material',),'cost_of_sales_ratio'),('인건비 ↔ 급여총액',('labor',),'payroll_ratio'),
+                    ('임대료 ↔ 임차료',('rent',),'rent_ratio'),('공과금·광고·기타 ↔ 기타비용',('utilities','advertising','other'),'other_ratio'))
+
+    def __init__(self,repository,cost_providers=(),financials=None,benchmarks=None):
         super().__init__(repository)
         # (module title, OperatingCostProvider) pairs wired by the composition root.
         self.cost_providers=tuple(cost_providers)
         # Optional monthly revenue/cost history (needs a database).
         self.financials=financials
+        # Optional BenchmarkProvider (small business survey averages); unused until data is imported.
+        self.benchmark_provider=benchmarks
+
+    @property
+    def benchmarks(self):
+        provider=self.benchmark_provider
+        return provider if provider is not None and provider.available() else None
+
+    def benchmark_choices(self):
+        return (self.benchmarks.industries(),self.benchmarks.regions()) if self.benchmarks else ([],[])
+
+    def prepare(self,values,raw):
+        """Attach the chosen industry average (or none) for the comparison tab."""
+        values['benchmark']=None
+        if not self.benchmarks: return values
+        industries,regions=self.benchmark_choices()
+        industry=(raw.get('bench_industry') or self.DEFAULT_BENCHMARK[0]).strip()
+        region=(raw.get('bench_region') or self.DEFAULT_BENCHMARK[1]).strip()
+        if industry=='none': return values
+        if industry not in industries or region not in regions:
+            raise ValidationError('비교할 업종과 지역을 목록에서 골라 주세요.')
+        found=self.benchmarks.benchmark(industry,region)
+        if found is None and region!='전국':
+            found=self.benchmarks.benchmark(industry,'전국')
+        values['benchmark']=asdict(found) if found else None
+        return values
+
+    @classmethod
+    def benchmark_table(cls,v,total):
+        b=v.get('benchmark')
+        if not b: return None
+        revenue=v['revenue']
+        def pct(amount): return amount/revenue*100 if revenue else None
+        def cell(value): return '-' if value is None else value
+        rows=[]
+        for label,keys,attr in cls.BENCHMARK_ROWS:
+            amount=sum((v[k] for k in keys),Decimal(0)); avg=b[attr]; mine=pct(amount)
+            rows.append([label,amount,cell(mine),cell(avg),cell(mine-avg if mine is not None and avg is not None else None),
+                         cell((revenue*avg/100).quantize(Decimal(1)) if avg is not None else None)])
+        profit=revenue-total; mine=pct(profit); avg=b['profit_ratio']
+        rows.append(['운영 손익 ↔ 영업이익',profit,cell(mine),cell(avg),cell(mine-avg if mine is not None and avg is not None else None),
+                     cell((revenue*avg/100).quantize(Decimal(1)) if avg is not None else None)])
+        where=b['region'] if b['split_region']==b['region'] else f"{b['region']} (비용 구성은 {b['split_region']} 값)"
+        note=(f"출처: {b['source']}. {b['year']}년 기업체당 연간 값 기준이며, {where} · {b['industry']}의 평균 월 매출은 약 "
+              f"{b['monthly_revenue']:,.0f}원입니다. 영업이익은 대표자 본인 인건비를 빼기 전 금액이라 실제로 남는 돈보다 크게 보입니다. "
+              '매출원가에는 재료비 외에 판매용 상품 구입비도 들어갑니다. 업종 평균이라 매장 규모·상권에 따라 차이가 큽니다. (내 PC 계산용)')
+        return dict(tab='업종 평균 비교',title=f"업종 평균과 비교 ({b['industry']} · {b['region']}, {b['year']})",
+                    lead='매출 대비 비율(%)로 비교합니다. 차이가 +이면 업종 평균보다 그 비용 비중이 큽니다.',
+                    columns=['항목','내 월 금액 (원)','내 매출 대비 (%)','업종 평균 (%)','차이 (%p)','내 매출에 업종 평균 비율을 적용한 금액 (원)'],
+                    rows=rows,note=note)
 
     # ---- Monthly records ----
     def list_months(self,workspace):
@@ -115,4 +171,4 @@ class CostOptimizationModel(AnalysisModel):
         return dict(metrics=[('월 총비용',total,'원'),('절감 전 운영 손익',profit,'원'),('가정상 월 절감액',savings,'원'),('절감 후 운영 손익',profit+savings,'원'),('손익분기 월 매출',breakeven if breakeven is not None else '산출 불가','원' if breakeven is not None else ''),('이전 월 대비 비용 증감',total-v['previous'],'원')],
                     columns=['항목','현재 비용 (원)','비중 (%)','절감 가정 (%)','월 절감액 (원)','절감 후 비용 (원)','검토할 대안·위험'],
                     rows=[[c['label'],c['cost'],c['share'],c['rate'],c['saving'],c['cost']-c['saving'],c['caution']] for c in decision['candidates']],
-                    chart=[(label,v[key]) for key,label,*_ in CATEGORIES],extra_tables=[sensitivity_table(v,total)],chart_title='현재 월 비용 구성',notes=notes,trace=decision['trace'],total=total,savings=savings,breakeven=breakeven)
+                    chart=[(label,v[key]) for key,label,*_ in CATEGORIES],extra_tables=[sensitivity_table(v,total)]+[t for t in [self.benchmark_table(v,total)] if t],chart_title='현재 월 비용 구성',notes=notes,trace=decision['trace'],total=total,savings=savings,breakeven=breakeven)

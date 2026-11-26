@@ -11,6 +11,7 @@ from app.common.repository import SqliteRepository
 from app.common.web import csrf_token, verify_csrf, workspace_id
 from app.common.time import korean_time
 from app.reference.kamis import KamisPrices
+from app.reference.kosis import KosisBenchmarks
 from app.reference.seoul_areas import SeoulAreaData
 
 
@@ -80,7 +81,8 @@ def create_app(config=None,enabled_modules=None):
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
             options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models),
-                     'financials':importlib.import_module('app.modules.cost_optimization.repositories.financials').FinancialStore(catalog_db)}
+                     'financials':importlib.import_module('app.modules.cost_optimization.repositories.financials').FinancialStore(catalog_db),
+                     'benchmarks':app.config.get('BENCHMARKS') or KosisBenchmarks(catalog_db)}
         models[name]=model_class(repository,**options)
     navigation=[]
     for name,_,title,description,short,number in MODULES:

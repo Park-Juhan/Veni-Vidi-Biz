@@ -11,9 +11,11 @@ def create_blueprint(model, title, description, number):
 
     def current_values(workspace):
         record = model.latest(workspace)
-        return record.inputs.copy() if record else model.defaults()
+        return model.defaults() | record.inputs if record else model.defaults()
 
     def keep_month_inputs(values, form):
+        for key in ('bench_industry', 'bench_region'):
+            if key in form: values[key] = form.get(key, '').strip()
         values['period'] = form.get('period', '').strip()
         values['save_month'] = 'yes' if form.get('save_month') == 'yes' else ''
         return values
@@ -38,6 +40,8 @@ def create_blueprint(model, title, description, number):
 
     def prepare_submission(values, source, workspace, form):
         keep_month_inputs(values, form)
+        if model.benchmarks and values.get('bench_industry') != 'none':
+            source += ' / 소상공인실태조사 업종 평균 비교'
         if values['save_month'] and not model.PERIOD.match(values['period']):
             raise ValidationError('월별 기록으로 저장하려면 기록할 월을 선택하세요.')
         # Hidden "import_<field>" inputs remember what was filled in; credit a source only if the value was kept.
@@ -59,7 +63,10 @@ def create_blueprint(model, title, description, number):
             flash(f"{record.inputs['period']} 매출·비용을 월별 기록에 저장했습니다.")
 
     def view_context(workspace):
-        return dict(can_import=bool(model.cost_providers), months_enabled=model.financials is not None,
+        industries, regions = model.benchmark_choices()
+        return dict(bench_industries=industries, bench_regions=regions, bench_default=model.DEFAULT_BENCHMARK,
+                    market_data_title='입력 기반 계산 · 소상공인실태조사 업종 평균 비교 가능' if industries else None,
+                    can_import=bool(model.cost_providers), months_enabled=model.financials is not None,
                     months=model.list_months(workspace), this_month=datetime.now(KST).strftime('%Y-%m'))
 
     return bind_module('cost_optimization', model, 'cost_optimization/index.html', title, description, number,

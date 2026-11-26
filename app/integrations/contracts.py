@@ -118,3 +118,27 @@ class MarketPriceProvider(Protocol):
     def options(self) -> list[MarketItemOption]: ...
     def suggest(self, name: str, base_unit: str) -> str | None: ...
     def quote(self, key: str) -> MarketQuote | None: ...
+
+
+@dataclass(frozen=True)
+class IndustryBenchmark:
+    """Average small business of one industry and region: monthly revenue and cost shares of revenue (%)."""
+    industry: str
+    region: str
+    year: str
+    firms: int | None
+    monthly_revenue: Decimal | None
+    cost_of_sales_ratio: Decimal | None
+    payroll_ratio: Decimal | None
+    rent_ratio: Decimal | None
+    other_ratio: Decimal | None
+    profit_ratio: Decimal | None
+    split_region: str          # region whose cost breakdown was used (may fall back to 전국)
+    source: str
+
+
+class BenchmarkProvider(Protocol):
+    def available(self) -> bool: ...
+    def industries(self) -> list[str]: ...
+    def regions(self) -> list[str]: ...
+    def benchmark(self, industry: str, region: str) -> IndustryBenchmark | None: ...

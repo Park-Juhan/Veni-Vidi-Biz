@@ -36,10 +36,27 @@
 {% for field in fields if field.group == '월 운영 비용' %}
   {% set ns.rows = ns.rows + [(field.label.replace(' (원/월)',''), field, by_name[field.name ~ '_rate'])] %}
 {% endfor %}
-{{ render_steps([
+{% set steps = [
   dict(title='매출 기준', hint='이번 달 예상 매출과 비교할 이전 월 총비용입니다.', fields=fields|selectattr('group','equalto','기본 조건')|list),
   dict(title='비용과 절감 가정', hint='항목마다 현재 월 비용과 줄일 수 있다고 보는 비율(%)을 한 줄에 입력합니다. 줄이지 않을 항목은 0%로 둡니다.', rows=ns.rows, cols=('월 비용 (원)','절감 (%)')),
-], values, imported or {}) }}
+] %}
+{% if bench_industries %}
+{% set chosen_industry = values.get('bench_industry') or bench_default[0] %}
+{% set chosen_region = values.get('bench_region') or bench_default[1] %}
+{% set bench_body %}
+<div class="fields-grid">
+  <div class="field"><label for="bench_industry">비교할 업종</label><select id="bench_industry" name="bench_industry">
+    <option value="none" {% if chosen_industry == 'none' %}selected{% endif %}>비교하지 않음</option>
+    {% for industry in bench_industries %}<option {% if chosen_industry == industry %}selected{% endif %}>{{ industry }}</option>{% endfor %}</select>
+    <small>중소벤처기업부 소상공인실태조사(2023) 업종 분류입니다. 카페·식당은 "음식점 및 주점업"을 고르세요.</small></div>
+  <div class="field"><label for="bench_region">지역</label><select id="bench_region" name="bench_region">
+    {% for region in bench_regions %}<option {% if chosen_region == region %}selected{% endif %}>{{ region }}</option>{% endfor %}</select>
+    <small>서울은 대분류 단위 비용 구성만 공개되어, 없는 항목은 전국 값을 씁니다.</small></div>
+</div>
+{% endset %}
+{% set steps = steps + [dict(title='업종 평균 비교', hint='계산 결과에 "업종 평균 비교" 탭을 추가합니다.', body=bench_body)] %}
+{% endif %}
+{{ render_steps(steps, values, imported or {}) }}
 {% endblock %}
 {% block module_extra %}
 {% if months_enabled %}
