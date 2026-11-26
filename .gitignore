@@ -20,6 +20,7 @@ instance/
 local-data/
 uploads/
 data/private/
+data/raw/
 *.log
 *.db
 *.sqlite

@@ -3,7 +3,7 @@ import sqlite3
 from app.common.db import utc_now
 from app.common.validation import ValidationError
 
-COLUMNS = ('name', 'rent', 'deposit', 'area', 'interior', 'fit', 'traffic', 'facility')
+COLUMNS = ('name', 'rent', 'deposit', 'area', 'interior', 'fit', 'traffic', 'facility', 'region_code')
 
 
 class CandidateStore:
@@ -13,7 +13,7 @@ class CandidateStore:
     def save(self, workspace, values, candidate_id=None):
         """Insert a candidate, or update it when candidate_id is given. values: column -> text. Returns the id."""
         now = utc_now()
-        data = [str(values[c]) for c in COLUMNS]
+        data = [None if values.get(c) is None else str(values[c]) for c in COLUMNS]
         try:
             with self.database.connect() as connection:
                 self.database.touch_workspace(connection, workspace)

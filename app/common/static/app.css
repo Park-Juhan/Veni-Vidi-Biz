@@ -91,3 +91,4 @@ tr.is-editing td{background:#f4f7ff}
 /* Campaign log (marketing) */
 .campaign-summary{padding:16px 22px 4px}.campaign-summary h3{font-size:13px;margin-bottom:4px}.campaign-summary .table-scroll{padding:0}
 .cell-note{display:block;font-size:9px;color:#8b95a8;white-space:normal;max-width:220px}
+.area-industry{max-width:360px;margin-top:14px}

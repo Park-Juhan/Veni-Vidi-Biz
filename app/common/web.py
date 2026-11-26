@@ -34,7 +34,7 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
     def index():
         workspace=workspace_id()
         record=model.latest(workspace)
-        values=record.inputs.copy() if record else model.defaults()
+        values=model.defaults()|record.inputs if record else model.defaults()  # fields added later fall back to defaults
         error=None
         status=200
         extra=dict(extra_context or {})

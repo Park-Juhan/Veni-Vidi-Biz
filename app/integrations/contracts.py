@@ -46,3 +46,45 @@ class MaterialCostItem:
 
 class MaterialCatalogProvider(Protocol):
     def list_material_costs(self, workspace: str) -> list[MaterialCostItem]: ...
+
+
+@dataclass(frozen=True)
+class AreaOption:
+    """One commercial area a location candidate can be linked to."""
+    code: str
+    label: str
+
+
+@dataclass(frozen=True)
+class AreaSnapshot:
+    """Published statistics of one commercial area for one industry and quarter (None = not published)."""
+    code: str
+    name: str
+    kind: str
+    district: str
+    dong: str
+    industry: str
+    period: str
+    sales: int | None = None
+    sales_count: int | None = None
+    stores: int | None = None
+    franchise: int | None = None
+    open_rate: int | None = None
+    close_rate: int | None = None
+    footfall: int | None = None
+    workers: int | None = None
+    residents: int | None = None
+    facilities: int | None = None
+    subway: int | None = None
+    bus_stops: int | None = None
+    change: str | None = None
+    top_age: str | None = None
+    top_time: str | None = None
+    source: str = ''
+
+
+class AreaDataProvider(Protocol):
+    def available(self) -> bool: ...
+    def area_options(self) -> list[AreaOption]: ...
+    def industries(self) -> list[str]: ...
+    def snapshot(self, code: str, industry: str) -> AreaSnapshot | None: ...

@@ -10,6 +10,7 @@ from app.common.db import Database
 from app.common.repository import SqliteRepository
 from app.common.web import csrf_token, verify_csrf, workspace_id
 from app.common.time import korean_time
+from app.reference.seoul_areas import SeoulAreaData
 
 
 MODULES=(
@@ -62,7 +63,9 @@ def create_app(config=None,enabled_modules=None):
         model_class=getattr(importlib.import_module(f'app.modules.{name}.models.service'),cls+'Model')
         options={}
         if name=='property':
-            options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db)}
+            # Reference data lives in the same database; tests can pass AREA_DATA (any AreaDataProvider).
+            options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db),
+                     'areas':app.config.get('AREA_DATA') or SeoulAreaData(catalog_db)}
         if name=='marketing':
             options={'campaigns':importlib.import_module('app.modules.marketing.repositories.campaigns').CampaignStore(catalog_db)}
         if name=='material_cost':

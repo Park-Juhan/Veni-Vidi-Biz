@@ -6,7 +6,7 @@
 {% set hints = {
   '기본 조건': '업종, 임대료 예산, 필요 면적처럼 모든 후보에 똑같이 적용할 조건입니다.',
   '공통 초기 자금': '어느 후보를 고르든 공통으로 드는 초기 비용입니다.',
-  '평가 가중치': '후보를 비교할 때 각 기준을 얼마나 중요하게 볼지 정합니다. 기본값은 고객층 30, 동선 20, 시설 10, 임대료 15, 초기 자금 15, 면적 10입니다.',
+  '평가 가중치': '후보를 비교할 때 각 기준을 얼마나 중요하게 볼지 정합니다. 기본값은 고객층 30, 동선 20, 시설 10, 임대료 15, 초기 자금 15, 면적 10이고, 상권이 연결된 후보끼리는 점포당 매출 15, 점포 수 10, 유동인구 10이 더해집니다.',
 } %}
 {% set compare = values.get('compare') %}
 {% set body %}
@@ -14,9 +14,14 @@
 {% if saved_candidates %}
 <div class="candidate-checks">
   {% for c in saved_candidates %}<label class="candidate-check"><input type="checkbox" name="compare" value="{{ c.id }}" {% if compare is none or c.id in compare %}checked{% endif %}>
-    <span><b>{{ c.name }}</b><small>임대료 {{ c.rent|float|display }}원 · {{ c.area }}㎡ · 적합도 {{ c.fit }}/{{ c.traffic }}/{{ c.facility }}</small></span></label>{% endfor %}
+    <span><b>{{ c.name }}</b><small>임대료 {{ c.rent|float|display }}원 · {{ c.area }}㎡ · 적합도 {{ c.fit }}/{{ c.traffic }}/{{ c.facility }}{% if c.region_label %} · 상권 {{ c.region_label.split(' · ')[0] }}{% endif %}</small></span></label>{% endfor %}
 </div>
 <p class="step-hint">2곳 이상 선택하세요. 후보 추가·수정은 화면 아래 "내 후보 목록"에서 합니다.</p>
+{% if area_industries %}
+<div class="field area-industry"><label for="area_industry">상권 데이터 업종</label>
+  <select id="area_industry" name="area_industry">{% for industry in area_industries %}<option {% if (values.get('area_industry') or default_industry) == industry %}selected{% endif %}>{{ industry }}</option>{% endfor %}</select>
+  <small>상권이 연결된 후보의 매출·점포 수를 이 업종 기준으로 비교합니다 (서울시 상권분석서비스 업종 분류).</small></div>
+{% endif %}
 {% else %}
 <div class="candidate-checks">
   {% for c in example_candidates %}<div class="candidate-check is-example"><span><b>{{ c.name }}</b><small>가상 예시 · 임대료 {{ c.rent|float|display }}원 · {{ c.area }}㎡</small></span></div>{% endfor %}
@@ -39,9 +44,9 @@
   <div class="panel-header"><h2 id="candidates-title">03 <span>내 후보 목록</span></h2><span class="small-label">{{ saved_candidates|length }} PLACES</span></div>
   {% if saved_candidates %}
   <div class="table-scroll" tabindex="0" role="region" aria-label="내 후보 목록"><table>
-    <thead><tr><th scope="col">후보</th><th scope="col">월 임대료</th><th scope="col">보증금</th><th scope="col">면적 (㎡)</th><th scope="col">시설·인테리어</th><th scope="col">고객층</th><th scope="col">동선</th><th scope="col">시설</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
+    <thead><tr><th scope="col">후보</th>{% if area_options %}<th scope="col">상권</th>{% endif %}<th scope="col">월 임대료</th><th scope="col">보증금</th><th scope="col">면적 (㎡)</th><th scope="col">시설·인테리어</th><th scope="col">고객층</th><th scope="col">동선</th><th scope="col">시설</th><th scope="col"><span class="sr-only">작업</span></th></tr></thead>
     <tbody>{% for c in saved_candidates %}<tr {% if editing_id == c.id %}class="is-editing"{% endif %}>
-      <td><b>{{ c.name }}</b></td><td>{{ c.rent|float|display }}</td><td>{{ c.deposit|float|display }}</td><td>{{ c.area }}</td><td>{{ c.interior|float|display }}</td><td>{{ c.fit }}</td><td>{{ c.traffic }}</td><td>{{ c.facility }}</td>
+      <td><b>{{ c.name }}</b></td>{% if area_options %}<td>{{ c.region_label.split(' · ')[0] if c.region_label else '-' }}</td>{% endif %}<td>{{ c.rent|float|display }}</td><td>{{ c.deposit|float|display }}</td><td>{{ c.area }}</td><td>{{ c.interior|float|display }}</td><td>{{ c.fit }}</td><td>{{ c.traffic }}</td><td>{{ c.facility }}</td>
       <td class="row-actions"><form method="post" action="{{ url_for(module_name+'.index') }}#candidates"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="candidate_id" value="{{ c.id }}"><button class="link-button link-primary" type="submit" name="action" value="edit_candidate" formnovalidate data-busy-label="여는 중…">수정</button><button class="link-button" type="submit" name="action" value="delete_candidate" formnovalidate data-busy-label="삭제 중…" aria-label="{{ c.name }} 삭제">삭제</button></form></td>
     </tr>{% endfor %}</tbody>
   </table></div>
@@ -53,6 +58,9 @@
     {% set f = candidate_form %}
     <div class="candidate-grid">
       <div class="field wide"><label for="cand_name">후보 지역 / 이름</label><input id="cand_name" name="cand_name" type="text" maxlength="120" required value="{{ f.get('name','') }}" placeholder="예: 시청역 2번 출구 1층"></div>
+      {% if area_options %}<div class="field wide"><label for="cand_region">서울 상권 (선택)</label><input id="cand_region" name="cand_region" type="text" list="area-options" maxlength="200" autocomplete="off" value="{{ f.get('region','') }}" placeholder="예: 홍대입구역, 서교동, 시청역" aria-describedby="help-cand_region">
+        <small id="help-cand_region">후보가 속한 상권을 이름·동으로 검색해 고르세요. 연결하면 매출·점포 수·유동인구 지표가 비교에 들어갑니다. 비워 두어도 됩니다.</small>
+        <datalist id="area-options">{% for o in area_options %}<option value="{{ o.label }}"></option>{% endfor %}</datalist></div>{% endif %}
       <div class="field"><label for="cand_rent">월 임대료 (원)</label><input id="cand_rent" name="cand_rent" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('rent','') }}"></div>
       <div class="field"><label for="cand_deposit">보증금 (원)</label><input id="cand_deposit" name="cand_deposit" type="number" min="0" step="any" inputmode="decimal" required value="{{ f.get('deposit','') }}"></div>
       <div class="field"><label for="cand_area">면적 (㎡)</label><input id="cand_area" name="cand_area" type="number" min="0.1" step="any" inputmode="decimal" required value="{{ f.get('area','') }}"></div>

@@ -12,6 +12,23 @@ CRITERIA = (
     ('startup', '초기 필요 자금', False),
     ('area', '면적', True),
 )
+# Criteria from public commercial-area data. Each applies only when every compared candidate has a value.
+DATA_CRITERIA = (
+    ('sales_per_store', '점포당 월평균 추정매출', True),
+    ('competition', '같은 업종 점포 수', False),
+    ('footfall', '유동인구', True),
+)
+
+
+def area_values(area):
+    """Data criteria values from an area snapshot dict (None when not published)."""
+    if not area:
+        return dict(sales_per_store=None, competition=None, footfall=None)
+    sales, stores = area.get('sales'), area.get('stores')
+    per_store = Decimal(sales)/stores/3 if sales is not None and stores else None
+    footfall = area.get('footfall')
+    return dict(sales_per_store=per_store, competition=Decimal(stores) if stores is not None else None,
+                footfall=Decimal(footfall) if footfall is not None else None)
 
 
 def _cost_conditions(board):
@@ -24,20 +41,23 @@ def _cost_conditions(board):
         board.candidates.append(dict(
             input=c,name=c['name'],startup=startup,meets=budget_ok and area_ok,
             notes=['임대료 예산 이내' if budget_ok else '임대료 예산 초과','필요 면적 충족' if area_ok else '필요 면적 미달'],
-            values=dict(fit=c['fit'],traffic=c['traffic'],facility=c['facility'],rent=c['rent'],startup=startup,area=c['area'])))
+            values=dict(fit=c['fit'],traffic=c['traffic'],facility=c['facility'],rent=c['rent'],startup=startup,area=c['area'],
+                        **area_values(c.get('area_data')))))
 
 
 def _topsis(board):
     """TOPSIS: rank by relative closeness to the ideal and distance from the worst on weighted criteria."""
     v=board.inputs
-    raw={key:v['w_'+key] for key,*_ in CRITERIA}
+    usable=[c for c in DATA_CRITERIA if all(x['values'][c[0]] is not None for x in board.candidates)]
+    active=[c for c in CRITERIA+tuple(usable) if v.get('w_'+c[0],Decimal(0))>0 or c in CRITERIA]
+    raw={key:v.get('w_'+key,Decimal(0)) for key,*_ in active}
     total=sum(raw.values(),Decimal(0))
     if total<=0:
         raise ValidationError('평가 가중치를 하나 이상 0보다 크게 입력해 주세요.')
     weights={key:w/total for key,w in raw.items()}
     weighted={id(c):{} for c in board.candidates}
     ideal,worst={},{}
-    for key,_,benefit in CRITERIA:
+    for key,_,benefit in active:
         norm=sum((c['values'][key]**2 for c in board.candidates),Decimal(0)).sqrt()
         column=[]
         for c in board.candidates:
@@ -51,6 +71,8 @@ def _topsis(board):
         c['closeness']=to_worst/(to_ideal+to_worst) if to_ideal+to_worst else Decimal('0.5')
         c['score']=c['closeness']*100
     board.facts['weights']=weights
+    board.facts['criteria']=active
+    board.facts['skipped']=[c for c in DATA_CRITERIA if c not in usable and v.get('w_'+c[0],Decimal(0))>0]
     # Candidates meeting budget and area come first; TOPSIS orders within each group.
     board.candidates.sort(key=lambda c:(c['meets'],c['closeness']),reverse=True)
 
