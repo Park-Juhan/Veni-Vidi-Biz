@@ -45,8 +45,9 @@ def create_blueprint(model, title, description, number):
 
     def view_context(workspace):
         options = model.market_options()
+        has_commodity = model.commodity_provider is not None and model.commodity_provider.available()
         return dict(catalog_enabled=model.catalog is not None, materials=model.list_materials(workspace),
-                    market_options=options, market_form=g.get('market_form') or {},
+                    market_options=options, market_form=g.get('market_form') or {}, show_market=bool(options) or has_commodity,
                     market_data_title='입력 기반 계산 · KAMIS 소매 시세 비교 가능' if options else None)
 
     return bind_module('material_cost', model, 'material_cost/index.html', title, description, number,

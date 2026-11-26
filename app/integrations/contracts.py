@@ -180,3 +180,20 @@ class StartupBenchmarkProvider(Protocol):
     def industries(self) -> list[str]: ...
     def regions(self) -> list[str]: ...
     def benchmark(self, industry: str, region: str) -> StartupBenchmark | None: ...
+
+
+@dataclass(frozen=True)
+class CommodityTrend:
+    """Latest weekly international futures price of a raw material and its change (%)."""
+    commodity: str
+    week_start: str
+    cents_per_lb: Decimal
+    usd_per_kg: Decimal | None
+    change_4w: Decimal | None
+    change_52w: Decimal | None
+    source: str
+
+
+class CommodityTrendProvider(Protocol):
+    def available(self) -> bool: ...
+    def trend_for(self, material_name: str) -> CommodityTrend | None: ...

@@ -20,12 +20,14 @@ class MaterialCostModel(AnalysisModel):
               help='손질·폐기 후 실제로 쓸 수 있는 비율. 예: 껍질·꼭지를 버려 70%만 쓰면 70. 손실이 없으면 100.'),
     )
 
-    def __init__(self,repository,catalog=None,prices=None):
+    def __init__(self,repository,catalog=None,prices=None,commodities=None):
         super().__init__(repository)
         # Optional saved-material list (needs a database); None disables it.
         self.catalog=catalog
         # Optional MarketPriceProvider (public retail prices); unused until data is imported.
         self.price_provider=prices
+        # Optional CommodityTrendProvider (international futures, e.g. green coffee) for materials without a retail price.
+        self.commodity_provider=commodities
 
     @property
     def prices(self):
@@ -51,6 +53,13 @@ class MaterialCostModel(AnalysisModel):
         return dict(key=quote.key,label=quote.label,auto=not item.get('market_item'),month=quote.month,unit=quote.unit,price=quote.price,
                     seoul_price=quote.seoul_price,per_base=quote.price_per_base if comparable else None,mine_per_base=mine,
                     gap=gap,change=change,comparable=comparable,source=quote.source)
+
+    def commodity_trend(self,name):
+        provider=self.commodity_provider
+        if provider is None or not provider.available(): return None
+        trend=provider.trend_for(name)
+        return None if trend is None else dict(commodity=trend.commodity,week=trend.week_start,cents=trend.cents_per_lb,
+                                               per_kg=trend.usd_per_kg,change_4w=trend.change_4w,change_52w=trend.change_52w,source=trend.source)
 
     def set_market_item(self,workspace,material_id,text):
         """Link by option label/key; 'auto' resets to name matching, 'none' turns comparison off."""
@@ -82,6 +91,7 @@ class MaterialCostModel(AnalysisModel):
         for item in materials:
             item['base_unit'],item['cost_per_base_unit']=self.base_unit_cost(item['unit'],item['unit_price'],item['yield_rate'])
             item['market']=self.compare_market(item) if with_market else None
+            item['commodity']=self.commodity_trend(item['name']) if with_market else None
         return materials
 
     def delete_material(self,workspace,material_id):
