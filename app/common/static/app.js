@@ -106,3 +106,62 @@ document.querySelectorAll('form').forEach(form => {
     button.disabled = true;
   });
 });
+
+// Industry -> suggested start-up costs (01). The select carries {industry: {field: value}} as JSON.
+document.querySelectorAll('[data-suggest-source]').forEach(select => {
+  const form = select.closest('form');
+  let table = {};
+  try { table = JSON.parse(select.dataset.suggestSource); } catch (e) { return; }
+  const fill = () => {
+    const values = table[select.value] || {};
+    Object.entries(values).forEach(([name, value]) => {
+      const input = form.elements[name];
+      if (input) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+  };
+  select.addEventListener('change', fill);
+  form.querySelectorAll('[data-suggest-fill]').forEach(button => button.addEventListener('click', fill));
+});
+
+// Money inputs: show the amount in 만 원 / 억 원 under the field so long numbers are easy to read.
+function readableWon(value) {
+  const n = Number(value);
+  if (!value || !isFinite(n) || n < 10000) return '';
+  const eok = Math.floor(n / 1e8), man = Math.round((n % 1e8) / 1e4);
+  return '= ' + [eok ? eok.toLocaleString('ko-KR') + '억' : '', man ? man.toLocaleString('ko-KR') + '만' : ''].filter(Boolean).join(' ') + ' 원';
+}
+document.querySelectorAll('input[data-money]').forEach(input => {
+  const hint = document.createElement('small');
+  hint.className = 'money-hint';
+  hint.setAttribute('aria-live', 'polite');
+  input.insertAdjacentElement('afterend', hint);
+  const update = () => { hint.textContent = readableWon(input.value); };
+  input.addEventListener('input', update);
+  update();
+});
+
+// Chip buttons that fill a text field (e.g. pick a dish in 02).
+document.querySelectorAll('[data-fill-target]').forEach(button => {
+  const target = document.getElementById(button.dataset.fillTarget);
+  if (!target) return;
+  const mark = () => document.querySelectorAll(`[data-fill-target="${button.dataset.fillTarget}"]`)
+    .forEach(b => b.classList.toggle('is-selected', b.dataset.fillValue === target.value));
+  button.addEventListener('click', () => { target.value = button.dataset.fillValue; target.dispatchEvent(new Event('input', { bubbles: true })); mark(); });
+  target.addEventListener('input', mark);
+  mark();
+});
+
+// 03: picking a menu fills its volume and a starting price from 02 and shows its ingredient cost.
+document.querySelectorAll('[data-dish-info]').forEach(select => {
+  let info = {};
+  try { info = JSON.parse(select.dataset.dishInfo); } catch (e) { return; }
+  const form = select.closest('form');
+  const tag = form.querySelector('[data-dish-cost]');
+  select.addEventListener('change', () => {
+    const d = info[select.value];
+    if (!d) return;
+    if (form.elements.volume) form.elements.volume.value = d.volume;
+    if (form.elements.price) { form.elements.price.value = d.price; form.elements.price.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (tag) tag.textContent = `← 02 재료비 관리 · 1인분 재료비 ${d.cost}원`;
+  });
+});

@@ -15,14 +15,15 @@ from app.reference.commodities import CommodityPrices
 from app.reference.dineout import DineOutPrices
 from app.reference.kosis import KosisBenchmarks, StartupBenchmarks
 from app.reference.seoul_areas import SeoulAreaData
+from app.reference.rents import AreaRents
 
 
 MODULES=(
-    ('property','Property','부동산 및 업장 관리','후보 입지를 비교하고 창업에 필요한 자금을 빠짐없이 살펴보세요.','공간과 초기 자금','01'),
-    ('material_cost','MaterialCost','재료비 관리','구매 단위가 달라도, 한 번 사용하는 재료의 원가를 정확하게 계산하세요.','재료의 단위 원가','02'),
-    ('menu_pricing','MenuPricing','메뉴 가격 관리','원가와 목표를 바탕으로 가격별 매출과 공헌이익을 비교하세요.','원가에서 판매가까지','03'),
+    ('property','Property','부동산 및 업장 관리','가게 조건을 알려 주면 서울 상권 중 상위 5곳과 필요한 자금을 골라 드립니다.','공간과 초기 자금','01'),
+    ('material_cost','MaterialCost','재료비 관리','음식을 고르면 들어가는 재료와 1인분 원가, 한 달 구매량을 계산합니다.','재료의 단위 원가','02'),
+    ('menu_pricing','MenuPricing','메뉴 가격 관리','판매가를 정하면 하루 몇 개를 팔아야 손익분기점을 넘는지, 한 달에 얼마가 남는지 보여 줍니다.','원가에서 판매가까지','03'),
     ('marketing','Marketing','마케팅 관리','예산과 운영 시간에 맞는 직접 홍보와 업체 이용 방안을 검토하세요.','우리 매장에 맞는 홍보','04'),
-    ('cost_optimization','CostOptimization','비용 절감 및 운영 개선','월 비용 구조를 파악하고 절감 시나리오와 손익분기점을 확인하세요.','비용 구조와 다음 선택','05'),
+    ('cost_optimization','CostOptimization','비용 절감 및 운영 개선','월 매출과 비용을 넣으면 지금 무엇부터 줄이고 고쳐야 하는지 짧게 추천합니다.','비용 구조와 다음 선택','05'),
 )
 
 
@@ -68,24 +69,25 @@ def create_app(config=None,enabled_modules=None):
         options={}
         if name=='property':
             # Reference data lives in the same database; tests can pass AREA_DATA (any AreaDataProvider).
-            options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db),
-                     'areas':app.config.get('AREA_DATA') or SeoulAreaData(catalog_db),
+            options={'areas':app.config.get('AREA_DATA') or SeoulAreaData(catalog_db),
+                     'rents':app.config.get('AREA_RENTS') or AreaRents(catalog_db),
                      'startup':app.config.get('STARTUP_BENCHMARKS') or StartupBenchmarks(catalog_db)}
         if name=='marketing':
             options={'campaigns':importlib.import_module('app.modules.marketing.repositories.campaigns').CampaignStore(catalog_db)}
         if name=='material_cost':
             options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db),
                      'prices':app.config.get('MARKET_PRICES') or KamisPrices(catalog_db),
-                     'commodities':app.config.get('COMMODITIES') or CommodityPrices(catalog_db)}
+                     'commodities':app.config.get('COMMODITIES') or CommodityPrices(catalog_db),
+                     'dishes':importlib.import_module('app.modules.material_cost.repositories.dishes').DishStore(catalog_db)}
         if name=='menu_pricing':
             recipes=importlib.import_module('app.modules.menu_pricing.repositories.recipes').RecipeStore(catalog_db)
             sales=importlib.import_module('app.modules.menu_pricing.repositories.sales').SalesStore(catalog_db)
-            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes,'sales':sales,
+            options={'dishes':models.get('material_cost'),'location':models.get('property'),'recipes':recipes,'sales':sales,
                      'dineout':app.config.get('DINEOUT') or DineOutPrices(catalog_db)}
         if name=='cost_optimization':
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
-            options={'cost_providers':tuple((labels[source],models[source]) for source in ('property','menu_pricing','marketing') if source in models),
+            options={'cost_providers':tuple((labels[source],models[source]) for source in ('menu_pricing','property','marketing') if source in models),
                      'financials':importlib.import_module('app.modules.cost_optimization.repositories.financials').FinancialStore(catalog_db),
                      'benchmarks':app.config.get('BENCHMARKS') or KosisBenchmarks(catalog_db)}
         models[name]=model_class(repository,**options)

@@ -4,7 +4,8 @@ import unittest
 
 from app.common.validation import ValidationError
 from app.main.application import MODULES, create_app
-from tests.module_support import model_for
+from tests.module_support import app_config, model_for
+from tests.fakes import property_config
 
 
 class CalculationTests(unittest.TestCase):
@@ -20,13 +21,13 @@ class CalculationTests(unittest.TestCase):
     def test_repository_browser_isolation_and_defensive_copy(self):
         model=model_for('material_cost');r=model.analyze(model.defaults(),'a')
         self.assertIsNone(model.latest('b'))
-        r.inputs['name']='altered'
-        self.assertNotEqual(model.latest('a').inputs['name'],'altered')
+        r.inputs['dish']='altered'
+        self.assertNotEqual(model.latest('a').inputs['dish'],'altered')
 
 
 class WebTests(unittest.TestCase):
     def setUp(self):
-        self.app=create_app({'TESTING':True,'SECRET_KEY':'test-only'})
+        self.app=create_app({'TESTING':True,'SECRET_KEY':'test-only'}|property_config())
         self.client=self.app.test_client()
 
     def post(self,client,path,values):
@@ -39,40 +40,44 @@ class WebTests(unittest.TestCase):
         for name,*_ in MODULES:
             path='/'+name.replace('_','-')+'/'
             with self.subTest(module=name):
-                response=self.post(self.client,path,model_for(name).defaults())
+                # 02 (run before 03) saves 카페라떼, so 03 prices that dish.
+                response=self.post(self.client,path,model_for(name).defaults()|({'dish':'카페라떼'} if name=='menu_pricing' else {}))
                 self.assertEqual(response.status_code,200)
                 self.assertIn('계산 기준과 확인할 점',response.get_data(as_text=True))
-                self.assertIn('가상 예시',response.get_data(as_text=True))
+                self.assertIn('참고 계산',response.get_data(as_text=True))
 
     def test_each_module_runs_with_other_modules_disabled(self):
         for name,*_ in MODULES:
-            client=create_app({'TESTING':True},[name]).test_client()
+            client=create_app(app_config(name),[name]).test_client()
             with self.subTest(module=name):
                 r=self.post(client,'/'+name.replace('_','-')+'/',model_for(name).defaults())
                 self.assertEqual(r.status_code,200)
                 self.assertIn('계산 기준과 확인할 점',r.get_data(as_text=True))
 
-    def test_optional_material_import_and_missing_fallback(self):
-        v=model_for('menu_pricing').defaults()|{'use_material':'yes'}
-        self.assertEqual(self.post(self.client,'/menu-pricing/',v).status_code,422)
-        self.post(self.client,'/material-cost/',model_for('material_cost').defaults())
-        r=self.post(self.client,'/menu-pricing/',v)
-        self.assertEqual(r.status_code,200)
-        html=r.get_data(as_text=True)
-        self.assertIn('재료비 연동',html)
-        self.assertRegex(html,r'name="material"[^>]*value="360(?:\.0*)?"')
+    def test_dish_from_material_module_fills_menu_pricing(self):
+        # Before 02 has a dish, 03 takes a typed ingredient cost.
+        first=self.app.test_client()
+        typed=self.post(first,'/menu-pricing/',model_for('menu_pricing').defaults()|{'material':'800'})
+        self.assertIn('직접 입력한 값',typed.get_data(as_text=True))
+        self.post(self.client,'/material-cost/',model_for('material_cost').defaults()|{'dish':'카페라떼','monthly_volume':'600'})
+        page=self.client.get('/menu-pricing/').get_data(as_text=True)
+        self.assertIn('<option selected>카페라떼</option>',page)   # filled from 02 before any 03 result
+        self.assertIn('1인분 재료비 978원',page)
+        self.assertRegex(page,r'name="volume"[^>]*value="600"')
+        # A typed cost is ignored once the dish exists; an unknown menu is refused.
+        r=self.post(self.client,'/menu-pricing/',model_for('menu_pricing').defaults()|{'dish':'카페라떼','material':'1'})
+        self.assertIn('계산한 카페라떼 1인분 원가',r.get_data(as_text=True))
+        self.assertEqual(self.post(self.client,'/menu-pricing/',model_for('menu_pricing').defaults()|{'dish':'없는 메뉴'}).status_code,422)
+        # Another browser has its own (empty) dish list.
         other=self.app.test_client()
-        self.assertEqual(self.post(other,'/menu-pricing/',v).status_code,422)
+        self.assertNotIn('카페라떼</option>',other.get('/menu-pricing/').get_data(as_text=True))
 
     def test_security_error_and_escaping(self):
         self.assertEqual(self.client.post('/menu-pricing/',data={}).status_code,400)
         self.assertEqual(self.client.get('/missing').status_code,404)
-        # A saved candidate name is shown in the form, list and results; it must be escaped everywhere.
-        self.post(self.client,'/property/',{'action':'save_candidate','cand_name':'<script>alert(1)</script>','cand_rent':'1000000','cand_deposit':'0',
-                                            'cand_area':'30','cand_interior':'0','cand_fit':'3','cand_traffic':'3','cand_facility':'3'})
-        self.post(self.client,'/property/',{'action':'add_examples'})
-        r=self.post(self.client,'/property/',model_for('property').defaults())
-        r=self.client.get('/property/')
+        # A typed menu name is shown in the form and results; it must be escaped everywhere.
+        self.post(self.client,'/menu-pricing/',model_for('menu_pricing').defaults()|{'dish':'<script>alert(1)</script>'})
+        r=self.client.get('/menu-pricing/')
         self.assertNotIn('<script>alert(1)</script>',r.get_data(as_text=True))
         self.assertIn('&lt;script&gt;',r.get_data(as_text=True))
         self.assertIn("frame-ancestors 'none'",r.headers['Content-Security-Policy'])
@@ -82,18 +87,12 @@ class WebTests(unittest.TestCase):
         response=self.client.post('/menu-pricing/',data={'csrf':'잘못된 토큰'})
         self.assertEqual(response.status_code,400)
 
-    def test_missing_material_preserves_import_selection(self):
-        values=model_for('menu_pricing').defaults()|{'use_material':'yes'}
-        response=self.post(self.client,'/menu-pricing/',values)
-        self.assertEqual(response.status_code,422)
-        self.assertRegex(response.get_data(as_text=True),r'name="use_material"[^>]*checked')
-
     def test_validation_preserves_values_and_previous_valid_result(self):
         v=model_for('menu_pricing').defaults()
         self.post(self.client,'/menu-pricing/',v)
-        r=self.post(self.client,'/menu-pricing/',v|{'margin':'100'})
+        r=self.post(self.client,'/menu-pricing/',v|{'volume':'0.5'})
         self.assertEqual(r.status_code,422)
-        self.assertIn('value="100"',r.get_data(as_text=True))
+        self.assertIn('value="0.5"',r.get_data(as_text=True))
         self.assertIn('계산 기준과 확인할 점',self.client.get('/menu-pricing/').get_data(as_text=True))
 
     def test_no_cross_module_internal_imports(self):

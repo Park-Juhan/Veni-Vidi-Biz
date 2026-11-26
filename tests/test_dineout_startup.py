@@ -13,6 +13,7 @@ from app.reference import dineout, kosis
 from app.reference.dineout import DineOutPrices
 from app.reference.kosis import StartupBenchmarks
 from tests.module_support import model_for
+from tests.fakes import property_config
 
 
 def loaded():
@@ -48,15 +49,14 @@ class DineOutTests(unittest.TestCase):
         self.assertIsNone(self.prices.quote('냉면', '부산'))
 
     def test_menu_comparison_tab(self):
-        result = self.model.analyze(self.model.defaults() | {'price': '9900', 'dine_menu': '김치찌개 백반', 'dine_region': '서울'}, 'w').result
+        # The dish name is matched to the survey menu (김치찌개 -> 김치찌개 백반, 서울).
+        result = self.model.analyze(self.model.defaults() | {'dish': '김치찌개', 'price': '9900'}, 'w').result
         tab = result['extra_tables'][0]
         self.assertEqual(tab['tab'], '외식 가격 비교')
         current = tab['rows'][1]
         self.assertEqual((current[1], current[2], current[3]), (Decimal(9900), Decimal(900), Decimal(10)))
         self.assertIn('+12.5%', tab['note'])  # 8,000 -> 9,000
-        self.assertNotIn('extra_tables', [k for k, v in self.model.analyze(self.model.defaults(), 'w').result.items() if v])
-        with self.assertRaises(ValidationError):
-            self.model.analyze(self.model.defaults() | {'dine_menu': '피자'}, 'w')
+        self.assertEqual(self.model.analyze(self.model.defaults() | {'dish': '아메리카노'}, 'w').result['extra_tables'], [])
 
 
 class StartupTests(unittest.TestCase):
@@ -73,33 +73,35 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(national.cost_brackets, (Decimal('20.0'), Decimal('42.2'), Decimal('37.8')))
 
     def test_property_tab(self):
-        result = self.model.analyze(self.model.defaults() | {'startup_industry': '음식점 및 주점업', 'startup_region': '전국'}, 'w').result
+        result = self.model.analyze(self.model.defaults() | {'rent_band': '상관없음'}, 'w').result
         tab = result['extra_tables'][-1]
-        self.assertEqual(tab['tab'], '업종 평균 임대·창업비용')
+        self.assertEqual(tab['tab'], '업종 평균과 비교')
         rows = {row[0]: row for row in tab['rows']}
-        b = rows['가상 주거지 B']   # rent 1,200,000; startup 49,700,000
-        self.assertEqual(round(b[2], 2), Decimal('18.81'))       # vs 1,010,000
-        self.assertEqual(b[6], '5천만 원 미만 (업체 20.0%)')
-        self.assertEqual(rows['가상 역세권 A'][6], '5천만~1억 원 (업체 42.2%)')
-        self.assertEqual(len(self.model.analyze(self.model.defaults(), 'w').result['extra_tables']), 1)
-        with self.assertRaises(ValidationError):
-            self.model.analyze(self.model.defaults() | {'startup_industry': '없는 업종'}, 'w')
+        self.assertEqual(rows['망원역'][2], '+74.3')            # 1,760,000 vs 1,010,000 (커피-음료 -> 음식점 및 주점업)
+        self.assertEqual(rows['망원역'][4], '5천만~1억 원 (업체 42.2%)')
+        self.model.startup_provider = None
+        self.assertEqual(len(self.model.analyze(self.model.defaults() | {'rent_band': '상관없음'}, 'w').result['extra_tables']), 1)
 
 
 class HttpTests(unittest.TestCase):
-    def test_inputs_appear_only_with_data(self):
+    def test_tabs_appear_only_with_data(self):
         prices, startup = loaded()
-        client = create_app({'TESTING': True, 'DINEOUT': prices, 'STARTUP_BENCHMARKS': startup}).test_client()
-        self.assertIn('비교할 외식 메뉴', client.get('/menu-pricing/').get_data(as_text=True))
-        self.assertIn('업종 평균 임대·창업비용 비교', client.get('/property/').get_data(as_text=True))
+        client = create_app({'TESTING': True, 'DINEOUT': prices, 'STARTUP_BENCHMARKS': startup} | property_config()).test_client()
+        client.get('/menu-pricing/')
         with client.session_transaction() as session:
             token = session['csrf']
         page = unescape(client.post('/menu-pricing/', data=model_for('menu_pricing').defaults() |
-                                    {'csrf': token, 'dine_menu': '냉면', 'dine_region': '서울'}, follow_redirects=True).get_data(as_text=True))
-        self.assertIn('서울 냉면 평균 가격과 비교 (2026-10)', page)
-        plain = create_app({'TESTING': True}).test_client()
-        self.assertNotIn('비교할 외식 메뉴', plain.get('/menu-pricing/').get_data(as_text=True))
-        self.assertNotIn('업종 평균 임대·창업비용 비교', plain.get('/property/').get_data(as_text=True))
+                                    {'csrf': token, 'dish': '김치찌개'}, follow_redirects=True).get_data(as_text=True))
+        self.assertIn('서울 김치찌개 백반 평균 가격과 비교 (2026-10)', page)
+        page = unescape(client.post('/property/', data=model_for('property').defaults() | {'csrf': token, 'rent_band': '상관없음'},
+                                    follow_redirects=True).get_data(as_text=True))
+        self.assertIn('업종 평균 임대·창업비용과 비교', page)
+        plain = create_app({'TESTING': True} | property_config()).test_client()
+        plain.get('/property/')
+        with plain.session_transaction() as session:
+            token = session['csrf']
+        page = plain.post('/property/', data=model_for('property').defaults() | {'csrf': token, 'rent_band': '상관없음'}, follow_redirects=True)
+        self.assertNotIn('업종 평균 임대·창업비용과 비교', page.get_data(as_text=True))
 
 
 if __name__ == '__main__':

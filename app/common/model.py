@@ -6,6 +6,8 @@ from app.common.validation import ValidationError, validate
 
 class AnalysisModel:
     fields = ()
+    # A key every current result has; older saved results without it (an earlier screen design) are ignored.
+    result_key = None
 
     def __init__(self, repository: AnalysisRepository):
         self.repository = repository
@@ -14,7 +16,10 @@ class AnalysisModel:
         return {field.name: field.default for field in self.fields}
 
     def latest(self, workspace):
-        return self.repository.latest(workspace)
+        record = self.repository.latest(workspace)
+        if record is not None and self.result_key and self.result_key not in record.result:
+            return None
+        return record
 
     def forget(self, workspace):
         """Delete everything this model stored for the workspace."""
@@ -25,7 +30,8 @@ class AnalysisModel:
         return values
 
     def analyze(self, raw, workspace, source="사용자 입력 · 검증되지 않은 가정"):
-        values = self.prepare(validate(self.fields, raw), raw)
+        # prepare() also sees the workspace (as raw['_workspace']) to read other modules' saved results.
+        values = self.prepare(validate(self.fields, raw), dict(raw) | {'_workspace': workspace})
         try:
             result = self.calculate(values)
         except DecimalException as exc:

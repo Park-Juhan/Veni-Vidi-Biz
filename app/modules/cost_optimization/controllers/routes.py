@@ -51,7 +51,7 @@ def create_blueprint(model, title, description, number):
             remembered = form.get('import_' + field, '')
             imported_value, _, label = remembered.partition('|')
             if label and values.get(field, '').strip() == imported_value:
-                kept.append(f'{names[field]} ← {label[:120]}')
+                kept.append(f"{names[field]} ← {label.split(' · ')[0]}")
         if kept:
             source += ' / 다른 모듈 값 사용: ' + ', '.join(kept)
         if values['save_month']:
@@ -65,7 +65,7 @@ def create_blueprint(model, title, description, number):
     def view_context(workspace):
         industries, regions = model.benchmark_choices()
         return dict(bench_industries=industries, bench_regions=regions, bench_default=model.DEFAULT_BENCHMARK,
-                    market_data_title='입력 기반 계산 · 소상공인실태조사 업종 평균 비교 가능' if industries else None,
+                    market_data_title='다른 모듈 결과를 불러오고 소상공인실태조사 업종 평균과 비교해 할 일을 추천합니다' if industries else '다른 모듈 결과를 불러와 할 일을 추천합니다',
                     can_import=bool(model.cost_providers), months_enabled=model.financials is not None,
                     months=model.list_months(workspace), this_month=datetime.now(KST).strftime('%Y-%m'))
 

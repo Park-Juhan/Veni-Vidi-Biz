@@ -3,20 +3,30 @@ import re
 from app.common.db import utc_now
 from app.common.model import AnalysisModel
 from app.common.validation import Field, ValidationError
-from app.integrations.contracts import MaterialCatalogProvider, MaterialCostProvider, OperatingCostSnapshot
+from app.integrations.contracts import DishCostProvider, LocationProvider, OperatingCostSnapshot
+
+DAYS = Decimal(30)
+# 02 dish name -> 외식비 survey menu (행정안전부 지방물가), for the price comparison tab.
+DINEOUT_MENUS = {'김치찌개': '김치찌개 백반', '짜장면': '자장면', '칼국수': '칼국수', '김밥': '김밥', '비빔밥': '비빔밥', '삼겹살 1인분': '삼겹살 (200g 환산)'}
+
+
+def won(value):
+    return value.quantize(Decimal(1))
 
 
 class MenuPricingModel(AnalysisModel):
+    result_key='advice'
     fields=(
-        Field('name','메뉴명','아메리카노','text'),
-        Field('material','메뉴 1개 재료비 (원)','1200'),
-        Field('other','메뉴 1개 기타 변동비 (원)','300',help='컵·포장비 등 판매 수량에 따라 드는 비용'),
-        Field('margin','목표 공헌이익률 (%)','65',maximum='99.99'),
-        Field('price','현재 판매가 (원)','4500'),
-        Field('volume','월 예상 판매량 (개)','1000',step='1',maximum='1000000000'),
+        Field('dish','메뉴','아메리카노','text'),
+        Field('material','1개 재료비 (원)','500',help='재료비 관리(02)에서 음식을 계산하면 이 값은 자동으로 채워집니다.'),
+        Field('price','판매가 (원)','5000',minimum='1'),
+        Field('volume','월 예상 판매량 (개)','900',step='1',minimum='1',maximum='1000000000',help='02에서 정한 판매량을 가져옵니다. 하루 30개 × 30일 = 900개.'),
+        Field('other','기타 변동비 (원/개)','400',group='비용',help='컵·뚜껑·포장재·카드 수수료처럼 1개 팔 때마다 드는 비용입니다.'),
+        Field('rent','월 임대료 (원)','1800000',group='비용'),
+        Field('labor','월 인건비 (원)','3000000',group='비용',help='직원 급여와 4대 보험. 사장님 본인 몫을 넣으면 실제로 남는 돈을 볼 수 있습니다.'),
+        Field('fixed_other','기타 월 고정비 (원)','700000',group='비용',help='공과금·관리비·통신·보험·세무 등.'),
     )
 
-    RECIPE_ROWS=6
     PERIOD=re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
     # Kasavana-Smith menu engineering: (popular, profitable) -> (label, suggestion)
     CLASSES={(True,True):('스타','지금 가격·품질을 유지하고 메뉴판에서 눈에 띄게 두세요.'),
@@ -24,59 +34,147 @@ class MenuPricingModel(AnalysisModel):
              (False,True):('저인기·고수익','추천·위치·설명으로 노출을 늘려 보세요.'),
              (False,False):('저인기·저수익','메뉴 정리나 재구성을 검토하세요.')}
 
-    def __init__(self,repository,material_provider: MaterialCostProvider | None = None,
-                 material_catalog: MaterialCatalogProvider | None = None,recipes=None,sales=None,dineout=None):
+    def __init__(self,repository,dishes: DishCostProvider | None = None,location: LocationProvider | None = None,
+                 recipes=None,sales=None,dineout=None):
         super().__init__(repository)
-        # Optional DineOutProvider (average restaurant menu prices by region); unused until data is imported.
+        self.dish_provider=dishes          # 02: analysed dishes and their ingredient cost
+        self.location_provider=location    # 01: chosen area's rent and average sales per store
+        self.recipes=recipes               # menus priced here (names, other cost) for the sales records
+        self.sales=sales if recipes else None
         self.dineout_provider=dineout
-        self.material_provider=material_provider
-        # Recipe costing needs both the saved-material list (material module) and a recipe store.
-        self.material_catalog=material_catalog
-        self.recipes=recipes if material_catalog else None
-        self.sales=sales if self.recipes else None
 
-    def materials(self,workspace):
-        return self.material_catalog.list_material_costs(workspace) if self.material_catalog else []
+    # ---- Inputs from other modules ----
+    def dishes(self,workspace):
+        return self.dish_provider.list_dishes(workspace) if self.dish_provider else []
 
-    def recipe_cost(self,workspace,rows):
-        """rows: [(material_id_text, quantity_text)]. Blank rows are skipped.
-        Returns (total cost, [(material_id, quantity, base_unit)], description)."""
-        prices={str(item.material_id):item for item in self.materials(workspace)}
-        total,items,parts,errors=Decimal(0),[],[],[]
-        for index,(material_id,quantity) in enumerate(rows,start=1):
-            material_id,quantity=(material_id or '').strip(),(quantity or '').strip()
-            if not material_id and not quantity: continue
-            item=prices.get(material_id)
-            if item is None:
-                errors.append(f'{index}번째 줄: 재료를 선택하세요.'); continue
-            try:
-                amount=Decimal(quantity)
-                if not amount.is_finite() or not Decimal(0)<amount<=Decimal(1000000000): raise InvalidOperation
-            except (InvalidOperation,ValueError):
-                errors.append(f'{index}번째 줄 ({item.name}): 사용량을 0보다 큰 숫자로 입력하세요.'); continue
-            if any(existing[0]==item.material_id for existing in items):
-                errors.append(f'{index}번째 줄: {item.name}이(가) 두 번 들어 있습니다. 한 줄로 합쳐 주세요.'); continue
-            total+=item.cost_per_base_unit*amount
-            items.append((item.material_id,amount,item.base_unit))
-            parts.append(f'{item.name} {amount:f}{item.base_unit}')
-        if errors: raise ValidationError(' / '.join(errors))
-        if not items: raise ValidationError('레시피에 재료를 한 줄 이상 입력하세요.')
-        return total,items,' + '.join(parts)
+    def location(self,workspace):
+        return self.location_provider.export_location(workspace) if self.location_provider else None
 
-    def save_recipe(self,workspace,name,items,other_cost=Decimal(0)):
-        return self.recipes.save(workspace,name.strip(),items,other_cost) if self.recipes else None
+    def defaults_for(self,workspace):
+        """Defaults filled from 02 (latest dish and its volume) and 01 (rent of the top area)."""
+        values=self.defaults()
+        dishes=self.dishes(workspace)
+        if dishes:
+            values.update(dish=dishes[0].name,volume=f'{dishes[0].monthly_volume.normalize():f}',
+                          price=f'{self.suggested_price(dishes[0].cost_per_serving):f}')
+        place=self.location(workspace)
+        if place: values['rent']=f'{place.monthly_rent.normalize():f}'
+        return values
+
+    @staticmethod
+    def suggested_price(cost):
+        """A starting price at a 30% food cost ratio, rounded up to 500 원."""
+        return (cost/Decimal('0.3')/500).to_integral_value(rounding=ROUND_CEILING)*500
+
+    @property
+    def dineout(self):
+        provider=self.dineout_provider
+        return provider if provider is not None and provider.available() else None
+
+    def prepare(self,values,raw):
+        """Ingredient cost comes from the dish analysed in 02; typed by hand only while 02 has no dishes."""
+        workspace=raw.get('_workspace')
+        dishes=self.dishes(workspace) if workspace else []
+        name=values['dish'].strip()
+        found=next((d for d in dishes if d.name==name),None)
+        if dishes and found is None:
+            raise ValidationError('메뉴를 목록에서 고르세요. 새 메뉴는 재료비 관리(02)에서 먼저 계산하세요.')
+        place=self.location(workspace) if workspace else None
+        values=values|dict(dish=name,material=found.cost_per_serving if found else values['material'],
+                           ingredients=[(i.name,i.cost) for i in found.ingredients] if found else [],
+                           place=dict(name=place.area_name,sales=place.sales_per_store,industry=place.industry) if place and place.sales_per_store else None,
+                           dineout=None)
+        menu=DINEOUT_MENUS.get(name)
+        if self.dineout and menu in self.dineout.menus():
+            quote=self.dineout.quote(menu,'서울')
+            if quote:
+                values['dineout']=dict(menu=quote.menu,region=quote.region,month=quote.month,price=quote.price,
+                                       year_ago_price=quote.year_ago_price,source=quote.source)
+        return values
+
+    # ---- Analysis ----
+    @staticmethod
+    def scenario(v,price):
+        unit_cost=v['material']+v['other']
+        margin=price-unit_cost
+        fixed=v['rent']+v['labor']+v['fixed_other']
+        bep=(fixed/margin).to_integral_value(rounding=ROUND_CEILING) if margin>0 else None
+        revenue=price*v['volume']
+        profit=margin*v['volume']-fixed
+        return dict(price=price,margin=margin,cost_ratio=v['material']/price*100,bep=bep,bep_day=(bep/DAYS).to_integral_value(rounding=ROUND_CEILING) if bep else None,
+                    bep_revenue=bep*price if bep else None,revenue=revenue,profit=profit)
+
+    def calculate(self,v):
+        fixed=v['rent']+v['labor']+v['fixed_other']
+        now=self.scenario(v,v['price'])
+        prices=sorted({max(Decimal(500),v['price']-500),v['price'],v['price']+500,v['price']+1000,self.suggested_price(v['material'])})
+        rows=[]
+        for price in prices:
+            s=self.scenario(v,price)
+            label='현재 가격' if price==v['price'] else ('원가율 30% 가격' if price==self.suggested_price(v['material']) else '')
+            rows.append([f"{price:,.0f}원"+(f" ({label})" if label else ''),s['margin'],s['cost_ratio'],
+                         f"{s['bep']:,.0f}개 (하루 {s['bep_day']:,.0f}개)" if s['bep'] else '이익이 남지 않음',
+                         s['bep_revenue'] if s['bep_revenue'] is not None else '-',s['revenue'],s['profit']])
+        day=(v['volume']/DAYS).quantize(Decimal(1))
+        advice=[]
+        if now['bep'] is None:
+            advice.append(f"지금 가격({v['price']:,.0f}원)은 1개 원가({v['material']+v['other']:,.0f}원)보다 낮거나 같아 팔수록 손해입니다. 가격을 올리세요.")
+        else:
+            advice.append(f"하루 {now['bep_day']:,.0f}개(월 {now['bep']:,.0f}개, 매출 {now['bep_revenue']:,.0f}원) 이상 팔아야 적자를 면합니다.")
+            advice.append(f"예상대로 하루 {day:,.0f}개를 팔면 한 달에 {abs(now['profit']):,.0f}원 " + ('남습니다.' if now['profit']>=0 else '모자랍니다.'))
+            if now['profit']<0:
+                need=next((p for p in range(int(v['price'])+100,int(v['price'])*3,100) if self.scenario(v,Decimal(p))['profit']>=0),None)
+                if need: advice.append(f"판매량이 그대로라면 판매가를 {need:,.0f}원 이상으로 올려야 손익분기점을 넘습니다. 고정비를 줄이는 방법은 비용 절감(05)에서 확인하세요.")
+        if now['cost_ratio']>40:
+            advice.append(f"원가율이 {now['cost_ratio']:.0f}%로 높은 편입니다(통상 25~35%). 분량이나 비싼 재료를 점검하세요.")
+        place=v.get('place')
+        if place and now['bep_revenue']:
+            ratio=now['bep_revenue']/place['sales']*100
+            advice.append(f"{place['name']} 상권의 {place['industry']} 점포당 월평균 매출은 {place['sales']:,.0f}원입니다. 손익분기 매출은 그 {ratio:.0f}% 수준이라 "
+                          +('무리 없는 목표입니다.' if ratio<=70 else '평균 매장만큼 팔아야 하는 빠듯한 목표입니다.' if ratio<=110 else '평균 매장보다 많이 팔아야 해 어려운 목표입니다.'))
+        notes=['손익분기 판매량 = 월 고정비(임대료 + 인건비 + 기타 고정비) ÷ 1개당 공헌이익(판매가 - 재료비 - 기타 변동비). 하루 판매량은 30일로 나눈 값입니다.',
+               (f"재료비 {v['material']:,.0f}원은 재료비 관리(02)에서 계산한 {v['dish']} 1인분 원가입니다: "+', '.join(f"{n} {c:,.0f}원" for n,c in v['ingredients'])+'.')
+               if v['ingredients'] else f"재료비 {v['material']:,.0f}원은 직접 입력한 값입니다. 재료비 관리(02)에서 음식을 계산하면 자동으로 이어받습니다.",
+               '이 메뉴 하나만 판다고 가정한 계산입니다. 여러 메뉴를 팔면 판매 비중에 따라 손익분기점이 달라집니다.',
+               '모든 가격에서 판매량이 같다고 가정합니다. 가격을 올리면 판매량이 줄 수 있습니다.',
+               '세금(부가세·소득세)과 대출 이자는 빠져 있습니다.']
+        if place: notes.append('상권 평균 매출: 부동산 및 업장 관리(01) 추천 1순위 상권의 서울시 상권분석서비스 추정매출(점포당 월평균)입니다.')
+        dine=self.dineout_table(v)
+        chart=[('손익분기 매출',now['bep_revenue'] or Decimal(0)),('예상 월 매출',now['revenue'])]
+        if place: chart.append((f"{place['name']} 점포당 평균 매출",won(place['sales'])))
+        return dict(metrics=[('손익분기 판매량',f"하루 {now['bep_day']:,.0f}" if now['bep'] else '도달 불가','개'),
+                             ('손익분기 월 매출',won(now['bep_revenue']) if now['bep_revenue'] else '-','원'),
+                             ('예상 월 매출',won(now['revenue']),'원'),('예상 월 영업이익',won(now['profit']),'원')],
+                    advice=advice,table_tab='가격별 손익',table_title=f"{v['dish']} 가격별 손익분기점과 월 이익 (월 {v['volume']:,.0f}개, 고정비 {fixed:,.0f}원)",
+                    columns=['판매가','1개당 공헌이익 (원)','원가율 (%)','손익분기 판매량 (월)','손익분기 매출 (원)','예상 월 매출 (원)','예상 월 영업이익 (원)'],rows=rows,
+                    chart=chart,chart_title='손익분기 매출과 예상 매출',extra_tables=[dine] if dine else [],notes=notes,
+                    menu_name=v['dish'],monthly_revenue=now['revenue'],monthly_material=v['material']*v['volume'],monthly_volume=v['volume'])
+
+    @staticmethod
+    def dineout_table(v):
+        d=v.get('dineout')
+        if not d: return None
+        avg=Decimal(d['price'])
+        change=(avg-d['year_ago_price'])/d['year_ago_price']*100 if d['year_ago_price'] else None
+        rows=[['서울 평균 외식 가격',avg,'-','-'],['내 판매가',v['price'],v['price']-avg,(v['price']-avg)/avg*100]]
+        note=f"출처: {d['source']}, {d['month']} 기준." + (f" 1년 전 대비 {change:+.1f}%." if change is not None else '')
+        note+=' 대표 음식점 평균 판매가라 양·구성·입지에 따라 차이가 큽니다. (내 PC 계산용)'
+        return dict(tab='외식 가격 비교',title=f"{d['region']} {d['menu']} 평균 가격과 비교 ({d['month']})",
+                    lead='내 가격이 지역 평균보다 얼마나 높거나 낮은지 보여 줍니다.',
+                    columns=['구분','가격 (원)','평균과 차이 (원)','평균과 차이 (%)'],rows=rows,note=note)
+
+    # ---- Priced menus, monthly sales and menu engineering ----
+    def remember(self,workspace,record):
+        if self.recipes: self.recipes.save(workspace,record.result['menu_name'],[],Decimal(record.inputs['other']))
 
     def list_menus(self,workspace):
-        """Saved menus with recipe cost at the current saved material prices."""
+        """Menus priced here, with their current ingredient cost from 02."""
         if not self.recipes: return []
-        prices={item.material_id:item for item in self.materials(workspace)}
+        costs={d.name:d.cost_per_serving for d in self.dishes(workspace)}
         menus=self.recipes.list(workspace)
         for menu in menus:
-            menu['cost']=sum((prices[i['material_id']].cost_per_base_unit*i['quantity'] for i in menu['items'] if i['material_id'] in prices),Decimal(0))
+            menu['cost']=costs.get(menu['name'],Decimal(0))
         return menus
-
-    def get_menu(self,workspace,menu_id):
-        return self.recipes.get(workspace,menu_id) if self.recipes else None
 
     def delete_menu(self,workspace,menu_id):
         return bool(self.recipes and self.recipes.delete(workspace,menu_id))
@@ -85,7 +183,6 @@ class MenuPricingModel(AnalysisModel):
         super().forget(workspace)
         if self.recipes: self.recipes.forget(workspace)  # menu_sales go with their menus
 
-    # ---- Monthly sales and menu engineering ----
     def sales_periods(self,workspace):
         return self.sales.periods(workspace) if self.sales else []
 
@@ -122,7 +219,7 @@ class MenuPricingModel(AnalysisModel):
 
     def menu_engineering(self,workspace,period):
         """Classify each sold menu by popularity (share >= 70% of an equal share) and
-        unit contribution margin (>= sales-weighted average). Costs use current recipe prices."""
+        unit contribution margin (>= sales-weighted average). Costs use current ingredient prices."""
         sold=self.sales_for(workspace,period)
         menus=[menu for menu in self.list_menus(workspace) if menu['id'] in sold and sold[menu['id']][0]>0]
         total_qty=sum((sold[m['id']][0] for m in menus),Decimal(0))
@@ -146,68 +243,12 @@ class MenuPricingModel(AnalysisModel):
                     material=sum((r['material']*r['quantity'] for r in rows),Decimal(0)),
                     contribution=sum((r['total_margin'] for r in rows),Decimal(0)))
 
-    @property
-    def dineout(self):
-        provider=self.dineout_provider
-        return provider if provider is not None and provider.available() else None
-
-    def dineout_choices(self):
-        return (self.dineout.menus(),self.dineout.regions()) if self.dineout else ([],[])
-
-    def prepare(self,values,raw):
-        """Attach the chosen restaurant menu average (or none) for the comparison tab."""
-        values['dineout']=None
-        menu=(raw.get('dine_menu') or 'none').strip()
-        if not self.dineout or menu=='none': return values
-        menus,regions=self.dineout_choices()
-        region=(raw.get('dine_region') or ('서울' if '서울' in regions else regions[0])).strip()
-        if menu not in menus or region not in regions:
-            raise ValidationError('비교할 외식 메뉴와 지역을 목록에서 골라 주세요.')
-        quote=self.dineout.quote(menu,region)
-        values['dineout']=dict(menu=quote.menu,region=quote.region,month=quote.month,price=quote.price,
-                               year_ago_price=quote.year_ago_price,source=quote.source) if quote else None
-        return values
-
-    @staticmethod
-    def dineout_table(v,suggested):
-        d=v.get('dineout')
-        if not d: return None
-        avg=Decimal(d['price'])
-        def gap(price): return (price-avg)/avg*100
-        change=(avg-d['year_ago_price'])/d['year_ago_price']*100 if d['year_ago_price'] else None
-        rows=[['지역 평균 외식 가격',avg,'-','-'],['현재 가격',v['price'],v['price']-avg,gap(v['price'])],['계산 기준 가격',suggested,suggested-avg,gap(suggested)]]
-        note=(f"출처: {d['source']}, {d['month']} 기준. 1년 전 대비 {change:+.1f}%." if change is not None else f"출처: {d['source']}, {d['month']} 기준.")
-        note+=' 지역 대표 음식점의 평균 판매가이며 메뉴 구성·양·입지에 따라 차이가 큽니다. 가격 수준 참고용입니다. (내 PC 계산용)'
-        return dict(tab='외식 가격 비교',title=f"{d['region']} {d['menu']} 평균 가격과 비교 ({d['month']})",
-                    lead='내 가격이 지역 평균보다 얼마나 높거나 낮은지 보여 줍니다.',
-                    columns=['구분','가격 (원)','평균과 차이 (원)','평균과 차이 (%)'],rows=rows,note=note)
-
-    def import_material(self,workspace):
-        return self.material_provider.export_usage_cost(workspace) if self.material_provider else None
-
-    def calculate(self,v):
-        cost=v['material']+v['other']
-        exact=cost/(1-v['margin']/100)
-        suggested=(exact/100).to_integral_value(rounding=ROUND_CEILING)*100
-        prices=[('현재 가격',v['price']),('계산 기준 가격',suggested),('기준 + 500원',suggested+500)]
-        rows=[]
-        for label,price in prices:
-            profit=price-cost
-            rows.append([label,price,v['volume'],price*v['volume'],profit,profit*v['volume'],profit/price*100 if price else '산출 불가'])
-        return dict(metrics=[('100원 단위 올림 가격',suggested,'원'),('단위 변동 원가',cost,'원'),('기준 가격의 월 공헌이익',(suggested-cost)*v['volume'],'원')],
-                    columns=['시나리오','판매가 (원)','월 판매량','월 매출 (원)','단위 공헌이익 (원)','월 공헌이익 (원)','공헌이익률 (%)'],rows=rows,
-                    chart=[(label,price*v['volume']) for label,price in prices],chart_title='가격별 월 매출 비교 (동일 판매량 가정)',
-                    extra_tables=[t for t in [self.dineout_table(v,suggested)] if t],menu_name=v['name'],monthly_revenue=v['price']*v['volume'],monthly_material=v['material']*v['volume'],monthly_volume=v['volume'],
-                    notes=[f'반올림 전 가격 = 단위 변동 원가 ÷ (1 - 목표 공헌이익률) = {exact:,.2f}원. 표시 가격은 100원 단위 올림입니다.',
-                           '공헌이익 = 매출 - 변동 원가. 임대료·인건비·세금 등을 차감한 순이익이 아닙니다.',
-                           '모든 가격에서 입력 판매량을 동일하게 가정합니다. 가격에 따른 수요 변화나 실제 적정 시장 가격을 예측하지 않습니다.'])
-
     def export_operating_costs(self, workspace):
         periods = self.sales_periods(workspace)
         if periods:
             analysis = self.menu_engineering(workspace, periods[0])
             if analysis['rows']:
-                return OperatingCostSnapshot(detail=f"{periods[0]} 판매 기록 (메뉴 {len(analysis['rows'])}개, 레시피 재료비)",
+                return OperatingCostSnapshot(detail=f"{periods[0]} 판매 기록 (메뉴 {len(analysis['rows'])}개)",
                                              source='사용자 판매 기록', updated_at=utc_now(),
                                              monthly_revenue=analysis['revenue'], monthly_material=analysis['material'])
         record = self.latest(workspace)

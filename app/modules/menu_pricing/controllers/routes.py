@@ -1,74 +1,32 @@
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from flask import flash, g, request
 from app.common.web import bind_module
 from app.common.validation import ValidationError
-from app.common.time import korean_time
 
 KST = timezone(timedelta(hours=9))
 
 
 def create_blueprint(model, title, description, number):
-    def recipe_rows(source):
-        return [(source.get(f'recipe_material_{i}', ''), source.get(f'recipe_qty_{i}', '')) for i in range(model.RECIPE_ROWS)]
-
     def current_values(workspace):
         record = model.latest(workspace)
-        return model.defaults() | record.inputs if record else model.defaults()
+        return model.defaults_for(workspace) | record.inputs if record else model.defaults_for(workspace)
 
     def prepare_submission(values, source, workspace, form):
-        if model.dineout:
-            values['dine_menu'] = form.get('dine_menu', 'none').strip()
-            values['dine_region'] = form.get('dine_region', '').strip()
-            if values['dine_menu'] != 'none':
-                source += ' / 외식비 평균 비교'
-        use_recipe = form.get('use_recipe') == 'yes'
-        if use_recipe:
-            values['use_recipe'] = 'yes'
-            # Keep the rows so the form shows them again (also after a validation error).
-            for i, (material_id, quantity) in enumerate(recipe_rows(form)):
-                values[f'recipe_material_{i}'], values[f'recipe_qty_{i}'] = material_id, quantity
-        if form.get('use_material') == 'yes':
-            values['use_material'] = 'yes'
-            if use_recipe:
-                raise ValidationError('재료비 가져오기와 레시피 계산 중 하나만 선택하세요.')
-            snapshot = model.import_material(workspace)
-            if snapshot is None:
-                raise ValidationError('가져올 재료 원가가 없습니다. 재료비 모듈에서 먼저 계산하거나 직접 원가를 입력하세요.')
-            values['material'] = str(snapshot.usage_cost)
-            source += f' / 재료비 연동: {snapshot.source}, 기준 {korean_time(snapshot.updated_at)}'
-        if use_recipe:
-            total, _, description = model.recipe_cost(workspace, recipe_rows(form))
-            # Plain digits without trailing zeros (860.0 -> 860, 12.50 -> 12.5).
-            values['material'] = f'{total.normalize():f}'
-            source += f' / 레시피 합산 (내 재료 목록 단가): {description}'
-        return values, source
+        parts = ['재료비: 02 재료비 관리']
+        if model.location(workspace): parts.append('임대료·상권 매출: 01 추천 상권')
+        return values, ' · '.join(parts)
 
     def after_save(record, workspace, form):
-        if record.inputs.get('use_recipe') == 'yes':
-            _, items, _ = model.recipe_cost(workspace, recipe_rows(record.inputs))
-            if model.save_recipe(workspace, record.inputs['name'], items, Decimal(record.inputs['other'])):
-                flash(f"메뉴 '{record.inputs['name'].strip()}'의 레시피를 저장했습니다.")
+        model.remember(workspace, record)
 
     def handle_action(action, values, workspace, form):
         try:
             menu_id = int(form.get('menu_id', ''))
         except ValueError:
             menu_id = None
-        if action == 'load_menu':
-            menu = model.get_menu(workspace, menu_id) if menu_id else None
-            if menu is None:
-                return current_values(workspace), dict(action_error='불러올 메뉴를 찾지 못했습니다.')
-            values = current_values(workspace)
-            values.update(name=menu['name'], use_recipe='yes', use_material='', other=f"{menu['other_cost'].normalize():f}")
-            for i in range(model.RECIPE_ROWS):
-                item = menu['items'][i] if i < len(menu['items']) else None
-                values[f'recipe_material_{i}'] = str(item['material_id']) if item else ''
-                values[f'recipe_qty_{i}'] = f"{item['quantity']:f}" if item else ''
-            return values, dict(action_message=f"메뉴 '{menu['name']}'의 레시피를 불러왔습니다. 가격 조건을 확인하고 계산하세요.")
         if action == 'delete_menu':
             deleted = model.delete_menu(workspace, menu_id) if menu_id else False
-            return current_values(workspace), (dict(action_message='메뉴 레시피를 삭제했습니다.') if deleted
+            return current_values(workspace), (dict(action_message='메뉴를 판매 기록 목록에서 삭제했습니다.') if deleted
                                                else dict(action_error='삭제할 메뉴를 찾지 못했습니다.'))
         if action in ('save_sales', 'delete_sales'):
             period = form.get('sales_period', '').strip()
@@ -89,16 +47,20 @@ def create_blueprint(model, title, description, number):
         return values, {}
 
     def view_context(workspace):
-        menus_, regions_ = model.dineout_choices()
-        extra = dict(dine_menus=menus_, dine_regions=regions_,
-                     market_data_title='입력 기반 계산 · 지역 외식비 평균 비교 가능' if menus_ else None)
-        return extra | sales_context(workspace)
+        dishes = model.dishes(workspace)
+        place = model.location(workspace)
+        imported = {}
+        if place: imported['rent'] = f'01 추천 1순위 {place.area_name}'
+        imported['volume'] = '02 재료비 관리에서 정한 판매량'
+        return dict(dishes=dishes, place=place, imported=imported, submit_label='손익분기점 계산하기',
+                    dish_info={d.name: dict(cost=f'{d.cost_per_serving:,.0f}', volume=f'{d.monthly_volume.normalize():f}',
+                                            price=f'{model.suggested_price(d.cost_per_serving):f}') for d in dishes},
+                    market_data_title='02 재료비와 01 임대료를 이어받아 계산합니다' if dishes else '재료비를 직접 넣거나 02에서 이어받아 계산합니다') | sales_context(workspace)
 
     def sales_context(workspace):
-        if model.sales is None:
-            return dict(recipe_enabled=model.recipes is not None, recipe_rows=model.RECIPE_ROWS,
-                        saved_materials=model.materials(workspace), menus=model.list_menus(workspace), sales_enabled=False)
         menus = model.list_menus(workspace)
+        if model.sales is None:
+            return dict(menus=menus, sales_enabled=False)
         periods = model.sales_periods(workspace)
         wanted = g.get('sales_period') or request.args.get('period', '')
         period = wanted if model.PERIOD.match(wanted or '') else (periods[0] if periods else datetime.now(KST).strftime('%Y-%m'))
@@ -114,9 +76,9 @@ def create_blueprint(model, title, description, number):
             else:
                 quantity, price = '', (f"{last_prices[menu['id']].normalize():f}" if menu['id'] in last_prices else '')
             form_rows.append(dict(id=menu['id'], name=menu['name'], quantity=quantity, price=price))
-        return dict(recipe_enabled=True, recipe_rows=model.RECIPE_ROWS, saved_materials=model.materials(workspace), menus=menus,
-                    sales_enabled=True, sales_periods=periods, sales_period=period, sales_form_rows=form_rows,
+        return dict(menus=menus, sales_enabled=True, sales_periods=periods, sales_period=period, sales_form_rows=form_rows,
                     engineering=model.menu_engineering(workspace, period) if period in periods else None)
 
     return bind_module('menu_pricing', model, 'menu_pricing/index.html', title, description, number,
-                       prepare_submission, handle_action, after_save=after_save, view_context=view_context)
+                       prepare_submission, handle_action, after_save=after_save, view_context=view_context,
+                       defaults_for=model.defaults_for)

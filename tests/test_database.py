@@ -8,6 +8,7 @@ import unittest
 from app.common.db import Database
 from app.common.repository import AnalysisRecord, SqliteRepository
 from app.main.application import create_app
+from tests.fakes import property_config
 from tests.module_support import model_for
 
 
@@ -20,7 +21,7 @@ class DatabaseTests(unittest.TestCase):
         self.folder.cleanup()
 
     def app(self):
-        return create_app({'TESTING': True, 'DATABASE': self.path})
+        return create_app({'TESTING': True, 'DATABASE': self.path} | property_config())
 
     @staticmethod
     def csrf(client, path='/workspace/'):
@@ -65,7 +66,7 @@ class DatabaseTests(unittest.TestCase):
         restarted.set_cookie('session', cookie)
         html = restarted.get('/property/').get_data(as_text=True)
         self.assertIn('<table>', html)
-        self.assertIn('가상 주거지 B', html)
+        self.assertIn('홍대입구', html)   # the only fake area inside 200~300만 원
         self.assertTrue((self.path.parent / 'secret_key').exists())
 
     def test_open_workspace_by_code_and_delete(self):

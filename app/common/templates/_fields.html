@@ -1,4 +1,12 @@
 {# Shared input field markup. Used by module.html and module-specific views. #}
 {% macro render_field(field, values, imported={}) -%}
-<div class="field"><label for="{{ field.name }}">{{ field.label }}</label>{% if field.kind=='select' %}<select id="{{ field.name }}" name="{{ field.name }}">{% for choice in field.choices %}<option {% if values.get(field.name)==choice %}selected{% endif %}>{{ choice }}</option>{% endfor %}</select>{% else %}<input id="{{ field.name }}" name="{{ field.name }}" type="{{ field.kind }}" value="{{ values.get(field.name,'') }}" required {% if field.kind=='number' %}min="{{ field.minimum }}" max="{{ field.maximum }}" step="{{ field.step }}" inputmode="decimal"{% else %}maxlength="120"{% endif %} {% if field.help %}aria-describedby="help-{{ field.name }}"{% endif %}>{% endif %}{% if field.help %}<small id="help-{{ field.name }}">{{ field.help }}</small>{% endif %}{% if imported.get(field.name) %}<small class="import-tag">← {{ imported[field.name] }}</small>{% endif %}</div>
+<div class="field"><label for="{{ field.name }}">{{ field.label }}</label>{% if field.kind=='select' %}<select id="{{ field.name }}" name="{{ field.name }}">{% for choice in field.choices %}<option {% if values.get(field.name)==choice %}selected{% endif %}>{{ choice }}</option>{% endfor %}</select>{% else %}<input id="{{ field.name }}" name="{{ field.name }}" type="{{ field.kind }}" value="{{ values.get(field.name,'') }}" required {% if field.kind=='number' %}min="{{ field.minimum }}" max="{{ field.maximum }}" step="{{ field.step }}" inputmode="decimal"{% if '원' in field.label %} data-money{% endif %}{% else %}maxlength="120"{% endif %} {% if field.help %}aria-describedby="help-{{ field.name }}"{% endif %}>{% endif %}{% if field.help %}<small id="help-{{ field.name }}">{{ field.help }}</small>{% endif %}{% if imported.get(field.name) %}<small class="import-tag">← {{ imported[field.name] }}</small>{% endif %}</div>
+{%- endmacro %}
+
+{# A select field shown as one-click choice chips (radio buttons), like a price filter. #}
+{% macro choice_chips(field, values) -%}
+<fieldset class="chip-group"><legend>{{ field.label }}</legend>
+  <div class="chips">{% for choice in field.choices %}<label class="chip"><input type="radio" name="{{ field.name }}" value="{{ choice }}" {% if values.get(field.name, field.default)==choice %}checked{% endif %} required><span>{{ choice }}</span></label>{% endfor %}</div>
+  {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+</fieldset>
 {%- endmacro %}

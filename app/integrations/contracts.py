@@ -88,6 +88,8 @@ class AreaDataProvider(Protocol):
     def area_options(self) -> list[AreaOption]: ...
     def industries(self) -> list[str]: ...
     def snapshot(self, code: str, industry: str) -> AreaSnapshot | None: ...
+    def districts(self) -> list[str]: ...
+    def snapshots(self, industry: str, districts: list[str] | None = None) -> list[AreaSnapshot]: ...
 
 
 @dataclass(frozen=True)
@@ -197,3 +199,54 @@ class CommodityTrend:
 class CommodityTrendProvider(Protocol):
     def available(self) -> bool: ...
     def trend_for(self, material_name: str) -> CommodityTrend | None: ...
+
+
+@dataclass(frozen=True)
+class RentEstimate:
+    """Estimated monthly rent per ㎡ (원) of small shops for one commercial area, and what it was based on."""
+    per_m2: Decimal
+    basis: str                       # e.g. '망원역 상권', '마포구 조사 상권 평균'
+    quarter: str
+    source: str
+
+
+class RentProvider(Protocol):
+    def available(self) -> bool: ...
+    def estimate(self, name: str, district: str, dong: str) -> RentEstimate | None: ...
+
+
+@dataclass(frozen=True)
+class DishIngredient:
+    name: str
+    quantity: Decimal                # per serving, in unit
+    unit: str                        # g, mL, 개
+    cost: Decimal                    # per serving (원)
+
+
+@dataclass(frozen=True)
+class DishCost:
+    """A dish analysed in the material cost module: ingredient cost per serving at current prices."""
+    dish_id: int
+    name: str
+    cost_per_serving: Decimal
+    monthly_volume: Decimal
+    ingredients: tuple[DishIngredient, ...]
+    updated_at: str
+
+
+class DishCostProvider(Protocol):
+    def list_dishes(self, workspace: str) -> list[DishCost]: ...
+
+
+@dataclass(frozen=True)
+class LocationSnapshot:
+    """The location chosen in the property module (01): rent and the area's average sales per store."""
+    area_name: str
+    monthly_rent: Decimal
+    sales_per_store: Decimal | None   # 상권 평균 점포당 월 추정매출
+    industry: str
+    updated_at: str
+
+
+class LocationProvider(Protocol):
+    def export_location(self, workspace: str) -> LocationSnapshot | None: ...

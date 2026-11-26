@@ -39,21 +39,23 @@ class CommodityTests(unittest.TestCase):
         _, short = loaded(weeks=3)
         self.assertIsNone(short.trend_for('커피').change_52w)
 
-    def test_material_list_and_page(self):
+    def test_dish_advice_material_list_and_page(self):
         database, prices = loaded()
         model = model_for('material_cost')
         model.catalog, model.commodity_provider = MaterialCatalog(database), prices
-        model.save_material('w', model.defaults())  # 원두
-        [item] = model.list_materials('w')
-        self.assertEqual(item['commodity']['change_52w'], Decimal(-25))
+        record = model.analyze(model.defaults(), 'w')   # 카페라떼 uses 원두
+        self.assertTrue(any('국제 커피(아라비카) 시세가 1년 전보다 25% 내렸습니다' in line for line in record.result['advice']))
+        model.remember('w', record)
+        beans = next(i for i in model.list_materials('w') if i['name'] == '원두')
+        self.assertEqual(beans['commodity']['change_52w'], Decimal(-25))
 
         client = create_app({'TESTING': True, 'COMMODITIES': prices}).test_client()
         client.get('/material-cost/')
         with client.session_transaction() as session:
             token = session['csrf']
-        client.post('/material-cost/', data=model_for('material_cost').defaults() | {'csrf': token, 'save_material': 'yes'})
+        client.post('/material-cost/', data=model_for('material_cost').defaults() | {'csrf': token})
         page = client.get('/material-cost/').get_data(as_text=True)
-        self.assertIn('국제 커피(아라비카) 선물', page)
+        self.assertIn('국제 커피(아라비카)', page)
         self.assertIn('-25%', page)
         self.assertIn('aT 식품산업통계정보(FIS)', page)
 

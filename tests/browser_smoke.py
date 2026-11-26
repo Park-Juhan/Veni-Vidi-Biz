@@ -24,33 +24,25 @@ def run(base_url='http://127.0.0.1:5000'):
             page.screenshot(path=str(out/f'home-{width}.png'),full_page=True)
             assert page.locator('h1').is_visible()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'Home overflow at {width}'
-            page.goto(base+'/menu-pricing/')
-            page.locator('[name=use_material]').check()
-            page.get_by_role('button',name='계산하고 대안 비교하기').click()
-            page.locator('[role=alert]').wait_for()
-            assert page.locator('[name=use_material]').is_checked()
             for route in ROUTES:
                 page.goto(base+'/'+route+'/')
-                page.get_by_role('button',name='계산하고 대안 비교하기').click()
+                if route=='property':
+                    page.locator('label.chip:has-text("상관없음")').click()   # any rent band, so data always yields areas
+                page.locator('.input-panel .primary-button').click()
                 page.wait_for_url(base+'/'+route+'/')
                 page.locator('.method-panel').wait_for()
                 assert page.locator('table tbody tr').count()>0
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'{route} overflow at {width}'
                 assert page.locator('.primary-button').is_enabled()
                 page.screenshot(path=str(out/f'{route}-{width}.png'),full_page=True)
-            # Optional import is a user action; absence never prevents direct entry.
+            # 03 takes the dish 02 just saved; let the server validate a malformed input even if native validation is bypassed.
             page.goto(base+'/menu-pricing/')
-            page.locator('[name=use_material]').check()
-            page.get_by_role('button',name='계산하고 대안 비교하기').click()
-            page.locator('.method-panel').wait_for()
-            assert Decimal(page.locator('[name=material]').input_value())==Decimal(360)
-            # Let the server validate a malformed input even if native validation is bypassed.
-            page.locator('form').evaluate('(f) => f.noValidate = true')
-            page.locator('[name=margin]').fill('100')
-            page.get_by_role('button',name='계산하고 대안 비교하기').click()
+            assert page.locator('select[name=dish]').count()==1
+            page.locator('form').first.evaluate('(f) => f.noValidate = true')
+            page.locator('[name=volume]').fill('0.5')
+            page.locator('.input-panel .primary-button').click()
             page.locator('[role=alert]').wait_for()
-            assert page.locator('[name=margin]').input_value()=='100'
-            assert page.locator('[name=use_material]').is_checked()
+            assert page.locator('[name=volume]').input_value()=='0.5'
             assert not errors,errors
             findings.append({'width':width,'routes':len(ROUTES)+1,'results':'pass','overflow':False,'javascript_errors':errors})
             context.close()

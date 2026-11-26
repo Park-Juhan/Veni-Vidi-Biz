@@ -12,6 +12,7 @@ CATEGORIES=(('rent','임대료','1500000','0'),('labor','인건비','3000000','0
 
 
 class CostOptimizationModel(AnalysisModel):
+    result_key='advice'
     fields=(Field('revenue','월 예상 매출 (원)','12000000'),Field('previous','이전 월 총비용 (원)','8500000',help='이전 월과 현재 월의 조건이 다르면 직접 비교에 한계가 있습니다.'))+tuple(
         field for key,label,default,rate in CATEGORIES for field in (
             Field(key,label+' (원/월)',default,group='월 운영 비용'),
@@ -153,6 +154,42 @@ class CostOptimizationModel(AnalysisModel):
             values['previous']=f'{previous[1].normalize():f}'; origins['previous']=f'05 월별 기록 · {previous[0]} 총비용'
         return dict(values=values,origins=origins,missing=missing)
 
+    # What to do first for each cost item, in a few words.
+    ACTIONS={'rent':'재계약 때 임대료 조정을 요청하거나 남는 면적을 줄일 수 있는지 알아보세요',
+             'labor':'손님이 적은 시간대 근무를 줄이고 바쁜 시간에 인력을 모으세요',
+             'material':'재료비 관리(02)에서 비중이 큰 재료의 공급처를 2~3곳 비교하세요',
+             'utilities':'전기 요금제와 냉난방·조명 사용 시간을 점검하세요',
+             'advertising':'마케팅 관리(04)에서 효과가 낮은 채널부터 줄이세요',
+             'other':'카드 수수료·보험·통신 요금제를 다시 비교하세요'}
+
+    def advice(self,v,total,decision,breakeven):
+        """Three to five short sentences: where the month stands and what to do first."""
+        revenue,profit=v['revenue'],v['revenue']-total
+        lines=[f"이번 달은 {abs(profit):,.0f}원 {'흑자' if profit>=0 else '적자'}입니다 (매출 {revenue:,.0f}원 - 비용 {total:,.0f}원)."]
+        if breakeven is not None:
+            gap=breakeven-revenue
+            lines.append(f"손익분기 매출 {breakeven:,.0f}원까지 {gap:,.0f}원 더 팔아야 합니다. 하루 {gap/30:,.0f}원어치입니다." if gap>0
+                         else f"손익분기 매출 {breakeven:,.0f}원보다 {-gap:,.0f}원 더 팔고 있습니다.")
+        b=v.get('benchmark')
+        if b and revenue:
+            worst=None
+            for label,keys,attr in self.BENCHMARK_ROWS:
+                avg=b[attr]
+                if avg is None: continue
+                mine=sum((v[k] for k in keys),Decimal(0))/revenue*100
+                if worst is None or mine-avg>worst[1]: worst=(label.split(' ↔ ')[0],mine-avg,keys[0])
+            if worst and worst[1]>3:
+                lines.append(f"{worst[0]} 비중이 업종 평균보다 {worst[1]:.0f}%p 높습니다. {self.ACTIONS[worst[2]]}.")
+        top=next((c for c in decision['candidates'] if c['saving']>0),None)
+        if top:
+            lines.append(f"가장 효과가 큰 절감: {top['label']} {top['rate']:,.0f}% 절감 시 월 {top['saving']:,.0f}원. {self.ACTIONS[top['key']]}.")
+        else:
+            biggest=max(decision['candidates'],key=lambda c:c['cost'])
+            lines.append(f"비용이 가장 큰 항목은 {biggest['label']}({biggest['share']:.0f}%)입니다. {self.ACTIONS[biggest['key']]}.")
+        if v['previous'] and total-v['previous']>v['previous']*Decimal('0.05'):
+            lines.append(f"지난달보다 비용이 {total-v['previous']:,.0f}원 늘었습니다. 늘어난 항목을 영수증으로 확인하세요.")
+        return lines[:5]
+
     def calculate(self,v):
         amounts={key:v[key] for key,*_ in CATEGORIES}
         total=sum(amounts.values(),Decimal(0))
@@ -168,7 +205,8 @@ class CostOptimizationModel(AnalysisModel):
                '운영 손익은 입력된 비용만 차감한 계산입니다. 누락한 세금·이자·수수료 등이 있으면 실제 손익과 다릅니다.']
         if breakeven is None: notes.append('매출이 0이거나 재료비 비율이 100% 이상이어서 유효한 손익분기 매출을 산출할 수 없습니다.')
         if total==0: notes.append('운영 비용이 모두 0입니다. 누락된 비용을 확인하세요.')
-        return dict(metrics=[('월 총비용',total,'원'),('절감 전 운영 손익',profit,'원'),('가정상 월 절감액',savings,'원'),('절감 후 운영 손익',profit+savings,'원'),('손익분기 월 매출',breakeven if breakeven is not None else '산출 불가','원' if breakeven is not None else ''),('이전 월 대비 비용 증감',total-v['previous'],'원')],
+        advice=self.advice(v,total,decision,breakeven)
+        return dict(advice=advice,metrics=[('월 총비용',total,'원'),('절감 전 운영 손익',profit,'원'),('가정상 월 절감액',savings,'원'),('절감 후 운영 손익',profit+savings,'원'),('손익분기 월 매출',breakeven.quantize(Decimal(1)) if breakeven is not None else '산출 불가','원' if breakeven is not None else ''),('이전 월 대비 비용 증감',total-v['previous'],'원')],
                     columns=['항목','현재 비용 (원)','비중 (%)','절감 가정 (%)','월 절감액 (원)','절감 후 비용 (원)','검토할 대안·위험'],
                     rows=[[c['label'],c['cost'],c['share'],c['rate'],c['saving'],c['cost']-c['saving'],c['caution']] for c in decision['candidates']],
                     chart=[(label,v[key]) for key,label,*_ in CATEGORIES],extra_tables=[sensitivity_table(v,total)]+[t for t in [self.benchmark_table(v,total)] if t],chart_title='현재 월 비용 구성',notes=notes,trace=decision['trace'],total=total,savings=savings,breakeven=breakeven)

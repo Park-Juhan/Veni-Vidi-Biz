@@ -8,71 +8,69 @@ from app.common.db import Database
 from app.common.validation import ValidationError
 from app.main.application import create_app
 from app.modules.cost_optimization.repositories.financials import FinancialStore
-from app.modules.material_cost.repositories.catalog import MaterialCatalog
+from app.modules.material_cost.repositories.dishes import DishStore
 from app.modules.menu_pricing.repositories.recipes import RecipeStore
 from app.modules.menu_pricing.repositories.sales import SalesStore
 from tests.module_support import model_for
 
 
 def menu_setup():
-    """Three menus: 아메리카노 (원두 18g = 360원), 라떼 (원두 18g + 우유 200mL = 860원), 쿠키 (밀가루 50g = 100원)."""
+    """Three dishes from 02 priced in 03: 아메리카노 (450원), 카페라떼 (978원), 크로플."""
     database = Database.in_memory()
     database.migrate()
     material = model_for('material_cost')
-    material.catalog = MaterialCatalog(database)
+    material.dishes = DishStore(database)
     menu = model_for('menu_pricing')
-    menu.material_catalog, menu.recipes, menu.sales = material, RecipeStore(database), SalesStore(database)
-    material.save_material('w', material.defaults())
-    material.save_material('w', material.defaults() | {'name': '우유', 'purchase_price': '2500', 'quantity': '1', 'unit': 'L'})
-    material.save_material('w', material.defaults() | {'name': '밀가루', 'purchase_price': '2000', 'quantity': '1', 'unit': 'kg'})
-    ids = {item.name: str(item.material_id) for item in menu.materials('w')}
-    for name, rows, other in (('아메리카노', [(ids['원두'], '18')], '200'), ('라떼', [(ids['원두'], '18'), (ids['우유'], '200')], '300'),
-                              ('쿠키', [(ids['밀가루'], '50')], '0')):
-        menu.save_recipe('w', name, menu.recipe_cost('w', rows)[1], Decimal(other))
+    menu.dish_provider, menu.recipes, menu.sales = material, RecipeStore(database), SalesStore(database)
+    for dish, other in (('아메리카노', '200'), ('카페라떼', '300'), ('크로플', '0')):
+        material.remember('w', material.analyze(material.defaults() | {'dish': dish}, 'w'))
+        menu.remember('w', menu.analyze(menu.defaults() | {'dish': dish, 'other': other}, 'w'))
     menus = {m['name']: m['id'] for m in menu.list_menus('w')}
-    return menu, menus
+    costs = {d.name: d.cost_per_serving for d in material.list_dishes('w')}
+    return menu, menus, costs
 
 
 class MenuEngineeringTests(unittest.TestCase):
     def test_classifies_by_popularity_and_unit_margin(self):
-        menu, ids = menu_setup()
-        menu.save_sales('w', '2026-10', [(ids['아메리카노'], '600', '4000'), (ids['라떼'], '300', '5500'), (ids['쿠키'], '100', '1500')])
+        menu, ids, cost = menu_setup()
+        self.assertEqual((cost['아메리카노'], cost['카페라떼']), (Decimal(450), Decimal(978)))
+        menu.save_sales('w', '2026-10', [(ids['아메리카노'], '600', '4000'), (ids['카페라떼'], '300', '5500'), (ids['크로플'], '100', '1500')])
         result = menu.menu_engineering('w', '2026-10')
         rows = {row['name']: row for row in result['rows']}
-        # Unit margins: 아메리카노 4000-(360+200)=3440, 라떼 5500-(860+300)=4340, 쿠키 1500-100=1400.
-        self.assertEqual([rows[n]['margin'] for n in ('아메리카노', '라떼', '쿠키')], [Decimal(3440), Decimal(4340), Decimal(1400)])
+        margins = {'아메리카노': 4000 - cost['아메리카노'] - 200, '카페라떼': 5500 - cost['카페라떼'] - 300, '크로플': 1500 - cost['크로플']}
+        self.assertEqual({n: rows[n]['margin'] for n in margins}, margins)
         self.assertEqual(result['revenue'], Decimal(600 * 4000 + 300 * 5500 + 100 * 1500))
-        self.assertEqual(result['material'], Decimal(600 * 360 + 300 * 860 + 100 * 100))
-        # Popularity line = 100/3 * 0.7 = 23.3%; weighted average margin = (2,064,000+1,302,000+140,000)/1000 = 3506.
-        self.assertEqual(result['average_margin'], Decimal(3506))
-        self.assertEqual(rows['아메리카노']['label'], '인기·저수익')   # 60% share, 3440 < 3506
-        self.assertEqual(rows['라떼']['label'], '스타')               # 30% share, 4340
-        self.assertEqual(rows['쿠키']['label'], '저인기·저수익')       # 10% share, 1400
-        self.assertEqual(result['rows'][0]['name'], '아메리카노')       # sorted by total margin
+        self.assertEqual(result['material'], 600 * cost['아메리카노'] + 300 * cost['카페라떼'] + 100 * cost['크로플'])
+        average = (600 * margins['아메리카노'] + 300 * margins['카페라떼'] + 100 * margins['크로플']) / 1000
+        self.assertEqual(result['average_margin'], average)
+        self.assertEqual(rows['아메리카노']['label'], '스타')          # 60% share, 3,350 >= average
+        self.assertEqual(rows['카페라떼']['label'], '스타')
+        self.assertEqual(rows['크로플']['label'], '저인기·저수익')     # 10% share, low margin
+        self.assertEqual(result['rows'][0]['name'], '아메리카노')      # sorted by total margin
 
     def test_sales_validation_and_replacement(self):
-        menu, ids = menu_setup()
-        for period, rows in (('2026-13', [(ids['쿠키'], '1', '1000')]), ('2026-10', [(ids['쿠키'], '-1', '1000')]),
-                             ('2026-10', [(ids['쿠키'], '1.5', '1000')]), ('2026-10', [(ids['쿠키'], '1', 'abc')]),
-                             ('2026-10', [(ids['쿠키'], '', '1000')])):
+        menu, ids, _ = menu_setup()
+        for period, rows in (('2026-13', [(ids['크로플'], '1', '1000')]), ('2026-10', [(ids['크로플'], '-1', '1000')]),
+                             ('2026-10', [(ids['크로플'], '1.5', '1000')]), ('2026-10', [(ids['크로플'], '1', 'abc')]),
+                             ('2026-10', [(ids['크로플'], '', '1000')])):
             with self.subTest(period=period, rows=rows), self.assertRaises(ValidationError):
                 menu.save_sales('w', period, rows)
-        menu.save_sales('w', '2026-10', [(ids['쿠키'], '10', '1500'), (ids['라떼'], '5', '5500')])
-        menu.save_sales('w', '2026-10', [(ids['쿠키'], '20', '1500')])  # same month replaces
-        self.assertEqual(set(menu.sales_for('w', '2026-10')), {ids['쿠키']})
+        menu.save_sales('w', '2026-10', [(ids['크로플'], '10', '1500'), (ids['카페라떼'], '5', '5500')])
+        menu.save_sales('w', '2026-10', [(ids['크로플'], '20', '1500')])  # same month replaces
+        self.assertEqual(set(menu.sales_for('w', '2026-10')), {ids['크로플']})
         self.assertEqual(menu.sales_periods('w'), ['2026-10'])
-        self.assertEqual(menu.latest_prices('w'), {ids['쿠키']: Decimal(1500)})
+        self.assertEqual(menu.latest_prices('w'), {ids['크로플']: Decimal(1500)})
         self.assertEqual(menu.sales_periods('other'), [])
         self.assertTrue(menu.delete_sales('w', '2026-10'))
         self.assertEqual(menu.sales_periods('w'), [])
 
     def test_operating_cost_export_prefers_latest_sales_month(self):
-        menu, ids = menu_setup()
-        menu.save_sales('w', '2026-09', [(ids['쿠키'], '10', '1500')])
-        menu.save_sales('w', '2026-10', [(ids['아메리카노'], '100', '4000'), (ids['쿠키'], '50', '1500')])
+        menu, ids, cost = menu_setup()
+        menu.save_sales('w', '2026-09', [(ids['크로플'], '10', '1500')])
+        menu.save_sales('w', '2026-10', [(ids['아메리카노'], '100', '4000'), (ids['크로플'], '50', '1500')])
         snapshot = menu.export_operating_costs('w')
         self.assertEqual(snapshot.monthly_revenue, Decimal(100 * 4000 + 50 * 1500))
-        self.assertEqual(snapshot.monthly_material, Decimal(100 * 360 + 50 * 100))
+        self.assertEqual(snapshot.monthly_material, 100 * cost['아메리카노'] + 50 * cost['크로플'])
         self.assertIn('2026-10 판매 기록', snapshot.detail)
 
 
@@ -112,11 +110,10 @@ class SalesAndMonthsHttpTests(unittest.TestCase):
         return self.client.post(path, data=data | {'csrf': self.token}, **kwargs)
 
     def test_sales_flow_feeds_cost_import_and_month_history(self):
-        self.post('/material-cost/', model_for('material_cost').defaults() | {'save_material': 'yes'})
         page = self.client.get('/menu-pricing/').get_data(as_text=True)
-        self.assertNotIn('월별 판매 기록', page)  # needs a saved menu first
-        bean = re.search(r'<option value="(\d+)"[^>]*>원두', page).group(1)
-        self.post('/menu-pricing/', model_for('menu_pricing').defaults() | {'use_recipe': 'yes', 'recipe_material_0': bean, 'recipe_qty_0': '18'})
+        self.assertNotIn('월별 판매 기록', page)  # needs a priced menu first
+        self.post('/material-cost/', model_for('material_cost').defaults() | {'dish': '아메리카노'})
+        self.post('/menu-pricing/', model_for('menu_pricing').defaults() | {'dish': '아메리카노'})
         page = self.client.get('/menu-pricing/').get_data(as_text=True)
         menu_id = re.search(r'name="sales_qty_(\d+)"', page).group(1)
 
@@ -132,7 +129,7 @@ class SalesAndMonthsHttpTests(unittest.TestCase):
         cost_defaults = model_for('cost_optimization').defaults()
         imported = unescape(self.post('/cost-optimization/', cost_defaults | {'action': 'import', 'period': '2026-10'}).get_data(as_text=True))
         self.assertIn('id="revenue" name="revenue" type="number" value="4500000"', imported)
-        self.assertIn('id="material" name="material" type="number" value="360000"', imported)  # 1000 x 360
+        self.assertIn('id="material" name="material" type="number" value="450000"', imported)  # 1000 x 450
         self.assertIn('2026-10 판매 기록', imported)
 
         page = unescape(self.post('/cost-optimization/', cost_defaults | {'period': '2026-10', 'save_month': 'yes'}, follow_redirects=True).get_data(as_text=True))

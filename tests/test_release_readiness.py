@@ -11,7 +11,7 @@ from app.common.model import AnalysisModel
 from app.common.repository import MemoryRepository
 from app.common.validation import ValidationError
 from app.main.application import MODULES, create_app
-from tests.module_support import model_for
+from tests.module_support import app_config, model_for
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +21,7 @@ class ReleaseInputTests(unittest.TestCase):
     def test_extreme_numbers_return_422_without_replacing_saved_result(self):
         for name, *_ in MODULES:
             with self.subTest(module=name):
-                client = create_app({'TESTING': True}, [name]).test_client()
+                client = create_app(app_config(name), [name]).test_client()
                 path = '/' + name.replace('_', '-') + '/'
                 client.get(path)
                 with client.session_transaction() as session:

@@ -6,7 +6,7 @@ import unittest
 from app.main.application import create_app
 
 from app.common.validation import ValidationError
-from tests.module_support import StandaloneModuleChecks, model_for
+from tests.module_support import StandaloneModuleChecks, app_config, model_for
 
 
 class CostOptimizationTests(StandaloneModuleChecks, unittest.TestCase):
@@ -40,15 +40,15 @@ class CostOptimizationTests(StandaloneModuleChecks, unittest.TestCase):
             provider.analyze(provider.defaults(),'a','가상 예시 · 실제 시장 자료 아님')
         imported=model.import_operating_costs('a')
         self.assertEqual(imported['missing'],[])
-        # Defaults: candidate B ranks first (rent 1,200,000); menu 4,500 x 1,000 with material 1,200; budget 300,000.
-        self.assertEqual(imported['values'],{'rent':'1200000','revenue':'4500000','material':'1200000','advertising':'300000'})
-        self.assertIn('1순위 후보 가상 주거지 B',imported['origins']['rent'])
+        # Defaults: 홍대입구 is the only fake area in 200~300만 원 (44㎡ x 60,000); menu 5,000 x 900 with material 500; budget 300,000.
+        self.assertEqual(imported['values'],{'rent':'2640000','revenue':'4500000','material':'450000','advertising':'300000'})
+        self.assertIn('추천 1순위 홍대입구',imported['origins']['rent'])
         self.assertIn('가상 예시',imported['origins']['revenue'])
         # Other workspaces see nothing.
         self.assertEqual(model.import_operating_costs('b')['values'],{})
 
     def test_import_action_fills_form_without_saving_and_credits_kept_values(self):
-        client=create_app({'TESTING':True}).test_client()
+        client=create_app(app_config('property')).test_client()
         client.get('/property/')
         with client.session_transaction() as session:
             token=session['csrf']
@@ -58,11 +58,11 @@ class CostOptimizationTests(StandaloneModuleChecks, unittest.TestCase):
         self.assertEqual(response.status_code,200)
         html=response.get_data(as_text=True)
         self.assertIn('1개 값을 불러왔습니다',html)
-        self.assertIn('id="rent" name="rent" type="number" value="1200000"',html)
+        self.assertIn('id="rent" name="rent" type="number" value="2640000"',html)
         self.assertIn('계산 기록이 없어 건너뜀',html)
         self.assertNotIn('<table>',html)  # nothing calculated or saved yet
         hidden=re.search(r'name="import_rent" value="([^"]+)"',html).group(1)
-        response=client.post('/cost-optimization/',data=cost_defaults|{'csrf':token,'rent':'1200000','import_rent':unescape(hidden)},follow_redirects=True)
+        response=client.post('/cost-optimization/',data=cost_defaults|{'csrf':token,'rent':'2640000','import_rent':unescape(hidden)},follow_redirects=True)
         self.assertIn('다른 모듈 값 사용: 임대료 ← 01 부동산 및 업장 관리',response.get_data(as_text=True))
         # A value changed after import is not credited to the other module.
         response=client.post('/cost-optimization/',data=cost_defaults|{'csrf':token,'rent':'999','import_rent':unescape(hidden)},follow_redirects=True)

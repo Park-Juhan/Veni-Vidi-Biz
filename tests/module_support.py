@@ -9,14 +9,24 @@ def model_for(name):
     module = importlib.import_module(f'app.modules.{name}.models.service')
     repositories = importlib.import_module(f'app.modules.{name}.repositories.memory')
     repository = getattr(repositories, class_prefix + 'Repository')()
-    return getattr(module, class_prefix + 'Model')(repository)
+    model = getattr(module, class_prefix + 'Model')(repository)
+    if name == 'property':
+        # 01 recommends from public data; tests use small fake providers.
+        from tests.fakes import FakeAreas, FakeRents
+        model.area_provider, model.rent_provider = FakeAreas(), FakeRents()
+    return model
+
+
+def app_config(name):
+    from tests.fakes import property_config
+    return {'TESTING': True} | (property_config() if name == 'property' else {})
 
 
 class StandaloneModuleChecks:
     """Mixin: each module suite exercises its own MVC app and memory store."""
 
     def standalone_client(self):
-        app = create_app({'TESTING': True}, enabled_modules=[self.module_name])
+        app = create_app(app_config(self.module_name), enabled_modules=[self.module_name])
         return app.test_client()
 
     @property
@@ -48,7 +58,7 @@ class StandaloneModuleChecks:
         html = response.get_data(as_text=True)
         self.assertIn('계산 기준과 확인할 점', html)
         self.assertIn('<table>', html)
-        self.assertIn('가상 예시', html)
+        self.assertIn('참고 계산', html)
         # New anonymous browser has its own empty result, even in the same app.
         other = client.application.test_client()
         self.assertNotIn('<table>', other.get(self.module_path).get_data(as_text=True))

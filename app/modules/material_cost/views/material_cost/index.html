@@ -1,54 +1,40 @@
 {% extends "module.html" %}
-{% block module_inputs %}
-{% if catalog_enabled %}
-<div class="integration-box">
-  <label class="checkbox-label"><input type="checkbox" name="save_material" value="yes" {% if values.get('save_material')=='yes' %}checked{% endif %}> 계산하면서 이 재료를 내 재료 목록에 저장</label>
-  <p>같은 이름이 있으면 최근 구매로 기록합니다. 저장한 재료는 메뉴 가격 모듈에서 레시피로 합산할 수 있습니다.</p>
-</div>
-{% endif %}
+{% from '_fields.html' import render_field %}
+{% block field_groups %}
+<div class="field"><label for="dish">음식</label>
+  <input id="dish" name="dish" type="text" list="dish-options" maxlength="120" required autocomplete="off" value="{{ values.get('dish','') }}" placeholder="예: 카페라떼, 김치찌개" aria-describedby="help-dish">
+  <datalist id="dish-options">{% for group, names in dish_groups.items() %}{% for name in names %}<option value="{{ name }}">{{ group }}</option>{% endfor %}{% endfor %}</datalist>
+  <small id="help-dish">목록에서 고르면 1인분 재료와 분량을 자동으로 채웁니다.</small></div>
+<div class="dish-menu">{% for group, names in dish_groups.items() %}<div class="chip-group"><span class="chip-caption">{{ group }}</span><div class="chips">{% for name in names %}<button type="button" class="chip chip-button" data-fill-target="dish" data-fill-value="{{ name }}"><span>{{ name }}</span></button>{% endfor %}</div></div>{% endfor %}</div>
+<div class="fields-grid">{{ render_field(fields[1], values) }}</div>
 {% endblock %}
 {% block module_extra %}
-{% if catalog_enabled %}
+{% if dishes %}
+<section class="panel list-panel" aria-labelledby="dishes-title">
+  <div class="panel-header"><h2 id="dishes-title">03 <span>계산한 메뉴</span></h2><span class="small-label">{{ dishes|length }} MENUS</span></div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="계산한 메뉴"><table>
+    <thead><tr><th scope="col">메뉴</th><th scope="col">1인분 재료비 (원)</th><th scope="col">월 예상 판매량</th><th scope="col">재료</th><th scope="col">계산 시점</th><th scope="col"><span class="sr-only">삭제</span></th></tr></thead>
+    <tbody>{% for d in dishes %}<tr><td><b>{{ d.name }}</b></td><td>{{ d.cost|display }}</td><td>{{ d.monthly_volume|display }}</td>
+      <td><small>{{ d['items']|map(attribute='name')|join(', ') }}</small></td><td>{{ d.updated_at|korean_time }}</td>
+      <td><form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_dish"><input type="hidden" name="item_id" value="{{ d.id }}"><button class="link-button" type="submit" formnovalidate data-busy-label="삭제 중…" aria-label="{{ d.name }} 삭제">삭제</button></form></td></tr>{% endfor %}</tbody>
+  </table></div>
+  <small class="list-note">여기 있는 메뉴는 메뉴 가격 관리(03)에서 골라 판매가와 손익분기점을 계산할 수 있습니다.</small>
+</section>
+{% endif %}
+{% if catalog_enabled and materials %}
 <section class="panel list-panel" aria-labelledby="materials-title">
-  <div class="panel-header"><h2 id="materials-title">03 <span>내 재료 목록</span></h2><span class="small-label">{{ materials|length }} ITEMS</span></div>
-  {% if materials %}
+  <div class="panel-header"><h2 id="materials-title">04 <span>내 재료 목록</span></h2><span class="small-label">{{ materials|length }} ITEMS</span></div>
   <div class="table-scroll" tabindex="0" role="region" aria-label="내 재료 목록"><table>
-    <thead><tr><th scope="col">재료</th><th scope="col">최근 구매 단가 (원)</th><th scope="col">구매 수량</th><th scope="col">수율 (%)</th><th scope="col">사용 단위 원가</th>{% if show_market %}<th scope="col">소매 시세 (전국)</th><th scope="col">내 구매 단가 vs 시세</th><th scope="col">시세 1년 변화</th>{% endif %}<th scope="col">구매 기록</th><th scope="col">최근 저장</th><th scope="col"><span class="sr-only">삭제</span></th></tr></thead>
+    <thead><tr><th scope="col">재료</th><th scope="col">적용 단가</th><th scope="col">최근 추천 구매량</th><th scope="col">수율 (%)</th><th scope="col">사용 단위 원가</th><th scope="col">시세 1년 변화</th><th scope="col">최근 계산</th><th scope="col"><span class="sr-only">삭제</span></th></tr></thead>
     <tbody>{% for item in materials %}<tr>
-      <td><b>{{ item.name }}</b></td><td>{{ item.unit_price|display }} / {{ item.unit }}</td><td>{{ item.quantity|display }} {{ item.unit }}</td><td>{{ item.yield_rate|display }}</td>
+      <td><b>{{ item.name }}</b></td><td>{{ item.unit_price|display }}원 / {{ item.unit }}</td><td>{{ item.quantity|display }} {{ item.unit }}</td><td>{{ item.yield_rate|display }}</td>
       <td>{{ item.cost_per_base_unit|display }}원 / {{ item.base_unit }}</td>
-      {% if show_market %}{% set m = item.market %}
-      {% if m %}<td><span class="market-label">{{ m.label }}{% if m.auto %} <small>(자동)</small>{% endif %}</span>{{ m.price|display }}원 / {{ m.unit }}<small class="market-sub">{{ m.month }}{% if m.seoul_price %} · 서울 {{ m.seoul_price|display }}원{% endif %}</small></td>
-      <td>{% if m.gap is not none %}<b class="{{ 'gap-up' if m.gap > 0 else 'gap-down' }}">{{ '%+.0f'|format(m.gap) }}%</b><small class="market-sub">내 {{ m.mine_per_base|display }}원 / 시세 {{ m.per_base|display }}원 ({{ item.base_unit }}당)</small>{% else %}<small>단위가 달라 비교 불가 ({{ m.unit }})</small>{% endif %}</td>
-      <td>{% if m.change is not none %}{{ '%+.0f'|format(m.change) }}%{% else %}-{% endif %}</td>
-      {% elif item.commodity %}{% set c = item.commodity %}<td><span class="market-label">국제 {{ c.commodity }} 선물</span>{{ '%.2f'|format(c.cents) }}¢/lb{% if c.per_kg %} (≈ ${{ '%.2f'|format(c.per_kg) }}/kg){% endif %}<small class="market-sub">{{ c.week }} 주 · 생두 국제 시세</small></td>
-      <td><small>소매 원두와 단가 직접 비교 불가 · 4주 {{ '%+.0f'|format(c.change_4w) if c.change_4w is not none else '-' }}%</small></td><td>{{ '%+.0f'|format(c.change_52w) ~ '%' if c.change_52w is not none else '-' }}</td>
-      {% else %}<td colspan="3"><small>{{ '비교 안 함' if item.market_item == '' else '이름이 같은 시세 품목 없음 · 아래에서 연결' }}</small></td>{% endif %}{% endif %}
-      <td>{{ item.purchases }}건</td><td>{{ item.purchased_at|korean_time }}</td>
-      <td><form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_material"><input type="hidden" name="material_id" value="{{ item.id }}"><button class="link-button" type="submit" formnovalidate data-busy-label="삭제 중…" aria-label="{{ item.name }} 삭제">삭제</button></form></td>
+      <td>{% if item.market and item.market.change is not none %}{{ '%+.0f'|format(item.market.change) }}% <small class="market-sub">{{ item.market.label.split(' · ')[0] }}</small>{% elif item.commodity and item.commodity.change_52w is not none %}{{ '%+.0f'|format(item.commodity.change_52w) }}% <small class="market-sub">국제 {{ item.commodity.commodity }}</small>{% else %}-{% endif %}</td>
+      <td>{{ item.purchased_at|korean_time }}</td>
+      <td><form method="post" action="{{ url_for(module_name+'.index') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_material"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="link-button" type="submit" formnovalidate data-busy-label="삭제 중…" aria-label="{{ item.name }} 삭제">삭제</button></form></td>
     </tr>{% endfor %}</tbody>
   </table></div>
-  <small class="list-note">사용 단위 원가 = 최근 구매 단가 ÷ 단위 환산 ÷ 수율. 메뉴 레시피는 이 값으로 계산합니다.</small>
-  {% if materials|selectattr('commodity')|list %}<small class="list-note">원두·커피 재료는 소매 시세가 없어 aT 식품산업통계정보(FIS) 국제 원료가격(ICE 아라비카 선물 주간 평균)의 추세를 보여 줍니다. 생두 국제가라 로스팅·관세·환율·유통 마진이 빠져 있으니 매입가가 오를지 내릴지 가늠하는 용도로만 쓰세요. (내 PC 계산용)</small>{% endif %}
-  {% if market_options %}
-  <small class="list-note">시세 비교: 수율을 빼기 전 구매 단가(g·mL·개당)를 KAMIS 소매가격 최근 월평균과 비교합니다. +는 시세보다 비싸게 산 것입니다.
-    소매 시세라서 도매·온라인 구매가와 차이가 날 수 있습니다. 출처: 한국농수산식품유통공사 KAMIS 농산물유통정보 (내 PC 계산용).</small>
-  {% set f = market_form %}
-  <form method="post" action="{{ url_for(module_name+'.index') }}#materials-title" class="market-form">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="set_market">
-    <h3>시세 품목 연결</h3>
-    <div class="candidate-grid">
-      <div class="field"><label for="market_material">재료</label><select id="market_material" name="material_id">{% for item in materials %}<option value="{{ item.id }}" {% if f.get('material_id') == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
-      <div class="field"><label for="market_choice">방식</label><select id="market_choice" name="market_choice">
-        <option value="pick" {% if f.get('market_choice','pick') == 'pick' %}selected{% endif %}>아래 품목으로 연결</option><option value="auto" {% if f.get('market_choice') == 'auto' %}selected{% endif %}>이름으로 자동 찾기</option><option value="none" {% if f.get('market_choice') == 'none' %}selected{% endif %}>비교하지 않기</option></select></div>
-      <div class="field wide"><label for="market_item">시세 품목</label><input id="market_item" name="market_item" type="text" list="market-options" maxlength="200" autocomplete="off" value="{{ f.get('market_item','') }}" placeholder="예: 양파, 대파, 레몬, 고등어">
-        <datalist id="market-options">{% for o in market_options %}<option value="{{ o.label }}"></option>{% endfor %}</datalist>
-        <small>소매 시세 {{ market_options|length }}개 품목·규격(KAMIS·참가격·서울 시장 조사) 중에서 고르세요. 단위가 kg·g·L·mL·개인 품목만 단가를 비교할 수 있습니다.</small></div>
-    </div>
-    <div class="sales-actions"><button class="step-button step-button-next" type="submit" formnovalidate data-busy-label="저장 중…">연결 저장</button></div>
-  </form>
-  {% endif %}
-  {% else %}<p class="list-empty">아직 저장한 재료가 없습니다. 위 계산 화면에서 "내 재료 목록에 저장"을 선택하고 계산하세요.</p>{% endif %}
+  <small class="list-note">메뉴를 계산할 때마다 쓰인 재료와 단가가 여기에 쌓입니다. 사용 단위 원가 = 단가 ÷ 단위 환산 ÷ 수율.</small>
 </section>
 {% endif %}
 {% endblock %}

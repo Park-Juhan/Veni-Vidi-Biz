@@ -7,7 +7,6 @@ import tempfile
 import unittest
 
 from app.common.db import Database
-from app.common.validation import ValidationError
 from app.main.application import create_app
 from app.modules.material_cost.repositories.catalog import MaterialCatalog
 from app.reference.kamis import KamisPrices, base_of, import_file, is_kamis
@@ -76,42 +75,23 @@ class MaterialMarketTests(unittest.TestCase):
         self.model.catalog = MaterialCatalog(database)
         self.model.price_provider = self.prices
 
-    def save(self, **values):
-        return self.model.save_material('w', self.model.defaults() | values)
+    def test_retail_reference_trend_and_advice(self):
+        record = self.model.analyze(self.model.defaults() | {'dish': '김치찌개'}, 'w')
+        rows = {row[0]: row for row in record.result['rows']}
+        # Applied price stays the assumed 업소용 1.5원/g; retail 2,500원/kg is shown with its one-year change.
+        self.assertEqual(rows['양파'][3], '1.5원/g')
+        self.assertEqual(rows['양파'][4], '2.5원/g (2026-10) · 1년 +25%')
+        self.assertEqual(rows['김치'][4], '-')                       # no retail series in this file
+        self.assertTrue(any('양파 소매 시세가 1년 새 25% 올랐습니다' in line for line in record.result['advice']))
+        self.assertEqual(record.result['metrics'][3][1], '1 / 7')
 
-    def item(self, name):
-        return next(i for i in self.model.list_materials('w') if i['name'] == name)
-
-    def test_auto_match_gap_and_trend(self):
-        self.save(name='양파', purchase_price='30000', quantity='1', unit='kg', usage='100', usage_unit='g', yield_rate='90')  # far too dear
-        self.save(name='양파', purchase_price='2000', quantity='10', unit='kg', usage='100', usage_unit='g', yield_rate='90')
-        market = self.item('양파')['market']
-        self.assertTrue(market['auto'])
-        # 2,000원/kg = 2원/g against 2.5원/g: 20% cheaper (yield is not applied to either side).
-        self.assertEqual((market['mine_per_base'], market['per_base'], market['gap']), (Decimal(2), Decimal('2.5'), Decimal(-20)))
-        self.assertEqual(market['change'], Decimal(25))  # 2,000 -> 2,500 over a year
-        self.assertEqual(market['seoul_price'], 2600)
-
-    def test_manual_link_off_and_incomparable_units(self):
-        material_id = self.save(name='레몬즙용 레몬', purchase_price='1000', quantity='5', unit='개', usage='1', usage_unit='개')
-        self.assertEqual(self.item('레몬즙용 레몬')['market']['label'], '레몬 · 수입 · 10개 · 상품')  # name contains 레몬
-        self.assertEqual(self.item('레몬즙용 레몬')['market']['gap'], Decimal(25))                  # 1,000 vs 800 per 개
-        self.assertTrue(self.model.set_market_item('w', material_id, '배추 · 1포기 · 상품'))
-        market = self.item('레몬즙용 레몬')['market']
-        self.assertFalse(market['auto'])
-        self.assertIsNone(market['gap'])  # 개 vs 포기: not comparable
-        self.model.set_market_item('w', material_id, 'none')
-        self.assertIsNone(self.item('레몬즙용 레몬')['market'])
-        self.model.set_market_item('w', material_id, 'auto')
-        self.assertTrue(self.item('레몬즙용 레몬')['market']['auto'])
-        with self.assertRaises(ValidationError):
-            self.model.set_market_item('w', material_id, '없는 품목')
-        self.assertFalse(self.model.set_market_item('other', material_id, 'auto'))  # another workspace
-
-    def test_menu_contract_skips_market_lookups(self):
-        self.save(name='양파', purchase_price='2000', quantity='1', unit='kg', usage='100', usage_unit='g')
-        [item] = self.model.list_material_costs('w')
-        self.assertEqual((item.name, item.base_unit), ('양파', 'g'))
+    def test_material_list_compares_with_retail(self):
+        self.model.remember('w', self.model.analyze(self.model.defaults() | {'dish': '김치찌개'}, 'w'))
+        onion = next(i for i in self.model.list_materials('w') if i['name'] == '양파')
+        self.assertEqual((onion['unit'], onion['unit_price']), ('kg', Decimal(1500)))
+        self.assertEqual((onion['market']['gap'], onion['market']['change']), (Decimal(-40), Decimal(25)))
+        [item] = [i for i in self.model.list_material_costs('w') if i.name == '양파']
+        self.assertEqual((item.base_unit, item.cost_per_base_unit), ('g', Decimal('1.5') * 100 / 90))
 
 
 class MarketHttpTests(unittest.TestCase):
@@ -122,28 +102,16 @@ class MarketHttpTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.token = session['csrf']
 
-    def post(self, data, **kwargs):
-        return unescape(self.client.post('/material-cost/', data=data | {'csrf': self.token}, **kwargs).get_data(as_text=True))
-
-    def test_list_shows_market_and_link_form(self):
-        self.post(model_for('material_cost').defaults() | {'name': '양파', 'purchase_price': '3000', 'quantity': '1', 'unit': 'kg',
-                                                           'usage': '100', 'usage_unit': 'g', 'save_material': 'yes'}, follow_redirects=True)
+    def test_result_and_list_show_retail_prices(self):
+        self.client.post('/material-cost/', data=model_for('material_cost').defaults() | {'dish': '김치찌개', 'csrf': self.token})
         page = unescape(self.client.get('/material-cost/').get_data(as_text=True))
-        self.assertIn('양파 · 1kg · 상품 <small>(자동)</small>', page)
-        self.assertIn('+20%', page)  # 3원/g vs 2.5원/g
-        self.assertIn('<option value="깐마늘(국산) · 1kg · 상품">', page)
-        material_id = page.split('name="material_id" value="')[1].split('"')[0]
-        bad = self.post({'action': 'set_market', 'material_id': material_id, 'market_choice': 'pick', 'market_item': '없는 품목'})
-        self.assertIn("시세 품목 '없는 품목'을(를) 찾지 못했습니다", bad)
-        done = self.post({'action': 'set_market', 'material_id': material_id, 'market_choice': 'pick', 'market_item': '양파 · 1kg · 중품'})
-        self.assertIn('시세 품목을 연결했습니다', done)
-        self.assertIn('2,100원 / 1kg', done)
-        off = self.post({'action': 'set_market', 'material_id': material_id, 'market_choice': 'none'})
-        self.assertIn('비교 안 함', off)
+        self.assertIn('음식을 고르면 재료와 원가를 공공 시세로 계산합니다', page)
+        self.assertIn('2.5원/g (2026-10) · 1년 +25%', page)
+        self.assertIn('+25% <small class="market-sub">양파</small>', page)
 
-    def test_without_prices_no_market_columns(self):
+    def test_without_prices_no_retail_reference(self):
         client = create_app({'TESTING': True}).test_client()
-        self.assertNotIn('소매 시세 (전국)', client.get('/material-cost/').get_data(as_text=True))
+        self.assertIn('표준 레시피로 재료와 원가를 계산합니다', client.get('/material-cost/').get_data(as_text=True))
 
 
 if __name__ == '__main__':

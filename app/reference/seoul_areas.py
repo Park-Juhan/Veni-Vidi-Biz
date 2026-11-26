@@ -217,7 +217,7 @@ class SeoulAreaData:
                 counts[metric] = found['value'] if found else None
             change = connection.execute('SELECT indicator_name FROM area_change WHERE area_code = ? AND period <= ? ORDER BY period DESC LIMIT 1',
                                         (code, latest or '99999')).fetchone()
-            datasets = [r['name'] for r in connection.execute('SELECT name FROM datasets ORDER BY name')]
+            datasets = [r['name'] for r in connection.execute('SELECT name FROM datasets WHERE provider = ? ORDER BY name', (PROVIDER,))]
         top_age = top_time = None
         if sales and sales['amount']:
             top_age = max(AGE_BANDS, key=lambda band: sales[f'age_{band[0]}'])[1]
@@ -234,3 +234,55 @@ class SeoulAreaData:
             open_rate=stores['open_rate'] if stores else None, close_rate=stores['close_rate'] if stores else None,
             change=change['indicator_name'] if change else None, top_age=top_age, top_time=top_time,
             source=f"{PROVIDER} ({', '.join(datasets)})", **counts)
+
+    def districts(self):
+        with self.database.connect() as connection:
+            return [r['district'] for r in connection.execute('SELECT DISTINCT district FROM areas ORDER BY district')]
+
+    def snapshots(self, industry, districts=None):
+        """Snapshots of every area with stores of the industry in the latest quarter (optionally only these 자치구)."""
+        cache = self.__dict__.setdefault('_snapshots', {})
+        if industry not in cache:
+            cache[industry] = self._all_snapshots(industry)
+        wanted = set(districts or [])
+        return [s for s in cache[industry] if not wanted or s.district in wanted]
+
+    def _all_snapshots(self, industry):
+        with self.database.connect() as connection:
+            latest = connection.execute('SELECT MAX(period) AS p FROM area_sales').fetchone()['p'] \
+                or connection.execute('SELECT MAX(period) AS p FROM area_stores').fetchone()['p']
+            if latest is None:
+                return []
+            areas = {r['code']: r for r in connection.execute('SELECT code, name, kind, district, dong FROM areas')}
+            stores = connection.execute('SELECT * FROM area_stores WHERE period = ? AND industry = ?', (latest, industry)).fetchall()
+            sales = {r['area_code']: r for r in connection.execute('SELECT * FROM area_sales WHERE period = ? AND industry = ?', (latest, industry))}
+            counts = {}
+            # Latest published value up to the sales quarter (looking back one year at most keeps this fast).
+            year_ago = str(int(latest[:4]) - 1) + latest[4:]
+            for r in connection.execute('SELECT area_code, metric, value FROM area_counts WHERE period <= ? AND period >= ? ORDER BY period', (latest, year_ago)):
+                counts.setdefault(r['area_code'], {})[r['metric']] = r['value']
+            changes = {r['area_code']: r['indicator_name'] for r in
+                       connection.execute('SELECT area_code, indicator_name FROM area_change WHERE period <= ? AND period >= ? ORDER BY period', (latest, year_ago))}
+            datasets = [r['name'] for r in connection.execute('SELECT name FROM datasets WHERE provider = ? ORDER BY name', (PROVIDER,))]
+        source = f"{PROVIDER} ({', '.join(datasets)})"
+        result = []
+        for st in stores:
+            area = areas.get(st['area_code'])
+            if area is None:
+                continue
+            sa = sales.get(st['area_code'])
+            c = counts.get(area['code'], {})
+            top_age = top_time = None
+            if sa and sa['amount']:
+                top_age = max(AGE_BANDS, key=lambda band: sa[f'age_{band[0]}'])[1]
+                top_time = max(TIME_BANDS, key=lambda band: sa[f'time_{band[0]}'])[1]
+            facilities = c.get('facilities')
+            result.append(AreaSnapshot(
+                code=area['code'], name=area['name'], kind=area['kind'], district=area['district'], dong=area['dong'], industry=industry,
+                period=quarter_label(latest), sales=sa['amount'] if sa else None, sales_count=sa['count'] if sa else None,
+                stores=st['stores'], franchise=st['franchise'], open_rate=st['open_rate'], close_rate=st['close_rate'],
+                change=changes.get(area['code']), top_age=top_age, top_time=top_time,
+                footfall=c.get('footfall'), residents=c.get('residents'), workers=c.get('workers'), facilities=facilities,
+                subway=c.get('subway', 0 if facilities is not None else None), bus_stops=c.get('bus_stops', 0 if facilities is not None else None),
+                source=source))
+        return result

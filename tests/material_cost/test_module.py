@@ -2,45 +2,43 @@ from decimal import Decimal
 import unittest
 
 from app.common.validation import ValidationError
+from app.modules.material_cost.models import recipes
 from tests.module_support import StandaloneModuleChecks, model_for
 
 
 class MaterialCostTests(StandaloneModuleChecks, unittest.TestCase):
     module_name = 'material_cost'
 
-    def test_material_cost_and_conversion(self):
-        model=model_for('material_cost')
-        record=model.analyze(model.defaults(),'a')
-        self.assertEqual(record.result['usage_cost'],Decimal(360))
-        self.assertEqual(record.result['metrics'][0][1],Decimal(40000))
-        snapshot=model.export_usage_cost('a')
-        self.assertEqual(snapshot.usage_cost,Decimal(360))
-        self.assertTrue(snapshot.updated_at)
+    def test_dish_cost_purchase_and_export(self):
+        model = model_for('material_cost')
+        record = model.analyze(model.defaults() | {'dish': '카페라떼', 'monthly_volume': '900'}, 'a')
+        r = record.result
+        # 원두 18g x 25원 + 우유 220mL x 2.4원 = 450 + 528
+        self.assertEqual(r['usage_cost'], Decimal(978))
+        rows = {row[0]: row for row in r['rows']}
+        self.assertEqual(rows['원두'][7], '1kg 봉 × 17')        # 16.2kg a month
+        self.assertEqual(rows['우유'][7], '1L 팩 × 198')
+        self.assertEqual(r['metrics'][1][1], Decimal(17 * 25000 + 198 * 2400))
+        self.assertEqual(model.export_usage_cost('a').usage_cost, Decimal(978))
 
+    def test_yield_raises_cost_and_amount_to_buy(self):
+        model = model_for('material_cost')
+        lines = {l['name']: l for l in model.analyze(model.defaults() | {'dish': '바나나라떼'}, 'a').result['lines']}
+        # 100g used at 65% yield -> 153.8g bought at 2.5원.
+        self.assertAlmostEqual(lines['바나나']['cost'], Decimal(100) / Decimal('0.65') * Decimal('2.5'), places=10)
 
-    def test_volume_conversion(self):
-        model=model_for('material_cost');v=model.defaults()
-        v.update(unit='L',usage_unit='mL',purchase_price='3000',quantity='2',usage='200')
-        self.assertEqual(model.analyze(v,'a').result['usage_cost'],Decimal(600))
-
-
-    def test_material_rejects_dimension_mismatch_or_excess(self):
-        model=model_for('material_cost')
-        for changes in ({'usage_unit':'mL'},{'usage':'2001'},{'quantity':'0'}):
-            with self.subTest(changes=changes),self.assertRaises(ValidationError):
-                model.analyze(model.defaults()|changes,'a')
-
-    def test_yield_raises_usable_unit_cost(self):
-        model=model_for('material_cost')
-        result=model.analyze(model.defaults()|{'yield_rate':'80'},'a').result
-        self.assertEqual(result['usage_cost'],Decimal(450))   # 360 / 0.8
-        self.assertEqual(dict(result['chart'])['1회 사용분의 손질·폐기 손실'],Decimal(90))
-        # 2kg bought at 1% yield leaves 20g usable, so 21g cannot be used.
+    def test_unknown_dish_lists_choices(self):
+        model = model_for('material_cost')
+        with self.assertRaisesRegex(ValidationError, '아메리카노'):
+            model.analyze(model.defaults() | {'dish': '없는 음식'}, 'a')
         with self.assertRaises(ValidationError):
-            model.analyze(model.defaults()|{'yield_rate':'1','usage':'21'},'a')
-        for bad in ('0','101'):
-            with self.subTest(yield_rate=bad),self.assertRaises(ValidationError):
-                model.analyze(model.defaults()|{'yield_rate':bad},'a')
+            model.analyze(model.defaults() | {'monthly_volume': '0'}, 'a')
+
+    def test_every_recipe_calculates(self):
+        model = model_for('material_cost')
+        for name in recipes.names():
+            with self.subTest(dish=name):
+                self.assertGreater(model.analyze(model.defaults() | {'dish': name}, 'a').result['usage_cost'], 0)
 
 
 if __name__ == "__main__":

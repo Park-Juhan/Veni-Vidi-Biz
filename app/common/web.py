@@ -25,27 +25,28 @@ def verify_csrf():
 
 
 def bind_module(name,model,template,title,description,number,prepare_submission=None,handle_action=None,extra_context=None,
-                after_save=None,view_context=None):
+                after_save=None,view_context=None,defaults_for=None):
     """after_save(record, workspace, form) runs after a successful calculation;
-    view_context(workspace) adds per-request template values (e.g. saved lists)."""
+    view_context(workspace) adds per-request template values (e.g. saved lists);
+    defaults_for(workspace) gives starting values filled from other modules."""
     blueprint=Blueprint(name,__name__,url_prefix='/'+name.replace('_','-'),template_folder='../modules/'+name+'/views')
 
     @blueprint.route('/',methods=['GET','POST'])
     def index():
         workspace=workspace_id()
         record=model.latest(workspace)
-        values=model.defaults()|record.inputs if record else model.defaults()  # fields added later fall back to defaults
+        starting=defaults_for(workspace) if defaults_for else model.defaults()
+        values=starting|record.inputs if record else starting  # fields added later fall back to defaults
         error=None
         status=200
         extra=dict(extra_context or {})
         if view_context: extra.update(view_context(workspace))
         example=request.args.get('example')=='1'
         if example:
-            values=model.defaults(); record=None
+            values=starting; record=None
         if request.method=='POST':
             verify_csrf()
             values={field.name: request.form.get(field.name,'') for field in model.fields}
-            values['data_mode']='user' if request.form.get('data_mode')=='user' else 'example'
             action=request.form.get('action','')
             if action and handle_action:
                 # Non-saving actions (e.g. fill inputs from other modules) re-render the form.
@@ -55,7 +56,7 @@ def bind_module(name,model,template,title,description,number,prepare_submission=
                 return render_template(template,fields=model.fields,values=values,record=record,error=None,
                                        module_name=name,title=title,description=description,number=number,**extra)
             try:
-                source='사용자 입력 · 실측 검증 안 됨' if values['data_mode']=='user' else '가상 예시 · 실제 시장 자료 아님'
+                source='사용자 입력 · 실측 검증 안 됨'
                 if prepare_submission:
                     values,source=prepare_submission(values,source,workspace,request.form)
                 record=model.analyze(values,workspace,source)
