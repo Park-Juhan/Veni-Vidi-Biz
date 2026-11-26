@@ -25,14 +25,19 @@ class MaterialCatalog:
         """Each material with its latest purchase, newest purchase first."""
         with self.database.connect() as connection:
             rows = connection.execute(
-                'SELECT m.id, m.name, m.unit, m.yield_rate, p.unit_price, p.quantity, p.purchased_at, '
+                'SELECT m.id, m.name, m.unit, m.yield_rate, m.market_item, p.unit_price, p.quantity, p.purchased_at, '
                 '(SELECT COUNT(*) FROM material_purchases c WHERE c.material_id = m.id) AS purchases '
                 'FROM materials m JOIN material_purchases p ON p.id = '
                 '(SELECT id FROM material_purchases WHERE material_id = m.id ORDER BY id DESC LIMIT 1) '
                 'WHERE m.workspace_id = ? ORDER BY p.id DESC', (workspace,)).fetchall()
         return [dict(id=row['id'], name=row['name'], unit=row['unit'], yield_rate=Decimal(row['yield_rate']),
                      unit_price=Decimal(row['unit_price']), quantity=Decimal(row['quantity']),
-                     purchased_at=row['purchased_at'], purchases=row['purchases']) for row in rows]
+                     purchased_at=row['purchased_at'], purchases=row['purchases'], market_item=row['market_item']) for row in rows]
+
+    def set_market_item(self, workspace, material_id, key):
+        """Link a material to a market price series (None = automatic, '' = no comparison)."""
+        with self.database.connect() as connection:
+            return connection.execute('UPDATE materials SET market_item = ? WHERE workspace_id = ? AND id = ?', (key, workspace, material_id)).rowcount
 
     def delete(self, workspace, material_id):
         with self.database.connect() as connection:

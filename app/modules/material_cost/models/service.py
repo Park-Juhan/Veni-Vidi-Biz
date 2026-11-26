@@ -20,10 +20,49 @@ class MaterialCostModel(AnalysisModel):
               help='손질·폐기 후 실제로 쓸 수 있는 비율. 예: 껍질·꼭지를 버려 70%만 쓰면 70. 손실이 없으면 100.'),
     )
 
-    def __init__(self,repository,catalog=None):
+    def __init__(self,repository,catalog=None,prices=None):
         super().__init__(repository)
         # Optional saved-material list (needs a database); None disables it.
         self.catalog=catalog
+        # Optional MarketPriceProvider (public retail prices); unused until data is imported.
+        self.price_provider=prices
+
+    @property
+    def prices(self):
+        provider=self.price_provider
+        return provider if provider is not None and provider.available() else None
+
+    def market_options(self):
+        return self.prices.options() if self.prices else []
+
+    def compare_market(self,item):
+        """Market comparison for one listed material: the linked (or name-matched) series and price gap."""
+        if not self.prices or item.get('market_item')=='':
+            return None
+        key=item.get('market_item') or self.prices.suggest(item['name'],item['base_unit'])
+        quote=self.prices.quote(key) if key else None
+        if quote is None:
+            return None
+        dimension,factor=UNITS[item['unit']]
+        mine=item['unit_price']/factor  # purchase price per base unit, before yield (market prices are as sold)
+        comparable=quote.price_per_base is not None and quote.base_unit==BASE_UNIT[dimension]
+        gap=(mine-quote.price_per_base)/quote.price_per_base*100 if comparable and quote.price_per_base else None
+        change=(Decimal(quote.price)-quote.year_ago_price)/quote.year_ago_price*100 if quote.year_ago_price else None
+        return dict(key=quote.key,label=quote.label,auto=not item.get('market_item'),month=quote.month,unit=quote.unit,price=quote.price,
+                    seoul_price=quote.seoul_price,per_base=quote.price_per_base if comparable else None,mine_per_base=mine,
+                    gap=gap,change=change,comparable=comparable,source=quote.source)
+
+    def set_market_item(self,workspace,material_id,text):
+        """Link by option label/key; 'auto' resets to name matching, 'none' turns comparison off."""
+        if not self.catalog or not self.prices: return False
+        text=(text or '').strip()
+        if text in ('','auto'): key=None
+        elif text=='none': key=''
+        else:
+            key=next((o.key for o in self.prices.options() if text in (o.label,o.key)),None)
+            if key is None:
+                raise ValidationError(f"시세 품목 '{text}'을(를) 찾지 못했습니다. 입력란에서 목록에 나오는 품목을 골라 주세요.")
+        return bool(self.catalog.set_market_item(workspace,material_id,key))
 
     @staticmethod
     def base_unit_cost(unit,unit_price,yield_rate):
@@ -37,11 +76,12 @@ class MaterialCostModel(AnalysisModel):
         v=validate(self.fields,raw)
         return self.catalog.save_purchase(workspace,v['name'].strip(),v['unit'],v['yield_rate'],v['purchase_price'],v['quantity'])
 
-    def list_materials(self,workspace):
+    def list_materials(self,workspace,with_market=True):
         if not self.catalog: return []
         materials=self.catalog.list(workspace)
         for item in materials:
             item['base_unit'],item['cost_per_base_unit']=self.base_unit_cost(item['unit'],item['unit_price'],item['yield_rate'])
+            item['market']=self.compare_market(item) if with_market else None
         return materials
 
     def delete_material(self,workspace,material_id):
@@ -50,7 +90,7 @@ class MaterialCostModel(AnalysisModel):
     def list_material_costs(self,workspace):
         """Public contract for other modules: saved materials priced per usable base unit."""
         return [MaterialCostItem(item['id'],item['name'],item['base_unit'],item['cost_per_base_unit'],item['purchased_at'])
-                for item in self.list_materials(workspace)]
+                for item in self.list_materials(workspace,with_market=False)]
 
     def forget(self,workspace):
         super().forget(workspace)

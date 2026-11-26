@@ -4,7 +4,7 @@
     .venv\\Scripts\\python.exe import_data.py D:\\files --database other.db
 
 Recognised now: 서울시 상권분석서비스 "-상권" CSV files (영역, 추정매출, 점포, 길단위인구,
-상주인구, 직장인구, 집객시설, 상권변화지표). Other files are listed and skipped.
+상주인구, 직장인구, 집객시설, 상권변화지표) and KAMIS_소매가격_월별_*.csv. Other files are skipped.
 """
 import argparse
 import os
@@ -13,6 +13,7 @@ import sys
 import time
 
 from app.common.db import Database
+from app.reference import kamis
 from app.reference.seoul_areas import DataImportError, import_file, kind_of
 
 ROOT = Path(__file__).resolve().parent
@@ -30,17 +31,17 @@ def main(argv=None):
     database = Database(args.database)
     database.migrate()
     files = sorted(folder.glob('*.csv'))
-    known = sorted((p for p in files if kind_of(p)), key=lambda p: kind_of(p) != '영역')
+    known = sorted((p for p in files if kind_of(p) or kamis.is_kamis(p)), key=lambda p: kind_of(p) != '영역')
     for path in files:
-        if not kind_of(path):
-            print(f'건너뜀  {path.name} (상권 단위 파일이 아님)')
+        if path not in known:
+            print(f'건너뜀  {path.name} (알 수 없는 파일 또는 상권 단위가 아님)')
     if not known:
-        print('불러올 파일이 없습니다. 서울시 상권분석서비스 "-상권" CSV 파일을 넣어 주세요.', file=sys.stderr)
+        print('불러올 파일이 없습니다. 서울시 상권분석서비스 "-상권" CSV 또는 KAMIS_소매가격_월별 CSV 파일을 넣어 주세요.', file=sys.stderr)
         return 1
     for path in known:
         started = time.perf_counter()
         try:
-            dataset, rows = import_file(database, path)
+            dataset, rows = (kamis.import_file if kamis.is_kamis(path) else import_file)(database, path)
         except (DataImportError, UnicodeDecodeError) as exc:
             print(f'실패    {path.name}: {exc}', file=sys.stderr)
             return 1

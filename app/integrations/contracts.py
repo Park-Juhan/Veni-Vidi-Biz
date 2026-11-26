@@ -88,3 +88,33 @@ class AreaDataProvider(Protocol):
     def area_options(self) -> list[AreaOption]: ...
     def industries(self) -> list[str]: ...
     def snapshot(self, code: str, industry: str) -> AreaSnapshot | None: ...
+
+
+@dataclass(frozen=True)
+class MarketItemOption:
+    """One market price series a material can be compared with (key = 품목|품종|단위|등급)."""
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
+class MarketQuote:
+    """Latest monthly retail price of one item; per-base prices are None when the unit is not g/mL/개 based."""
+    key: str
+    label: str
+    unit: str
+    month: str
+    price: int
+    seoul_price: int | None
+    base_unit: str | None
+    price_per_base: Decimal | None
+    seoul_per_base: Decimal | None
+    year_ago_price: int | None
+    source: str
+
+
+class MarketPriceProvider(Protocol):
+    def available(self) -> bool: ...
+    def options(self) -> list[MarketItemOption]: ...
+    def suggest(self, name: str, base_unit: str) -> str | None: ...
+    def quote(self, key: str) -> MarketQuote | None: ...

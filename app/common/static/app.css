@@ -92,3 +92,7 @@ tr.is-editing td{background:#f4f7ff}
 .campaign-summary{padding:16px 22px 4px}.campaign-summary h3{font-size:13px;margin-bottom:4px}.campaign-summary .table-scroll{padding:0}
 .cell-note{display:block;font-size:9px;color:#8b95a8;white-space:normal;max-width:220px}
 .area-industry{max-width:360px;margin-top:14px}
+.market-label{display:block;font-weight:600}.market-label small{font-weight:400;color:var(--muted,#667)}
+.market-sub{display:block;color:var(--muted,#667);font-size:.8em;margin-top:2px}
+.gap-up{color:#c0392b}.gap-down{color:#1e8449}.market-form{margin-top:18px}
+.table-scroll{position:relative}  /* keep absolutely positioned .sr-only labels inside the scroll box */

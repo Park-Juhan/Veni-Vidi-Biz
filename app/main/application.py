@@ -10,6 +10,7 @@ from app.common.db import Database
 from app.common.repository import SqliteRepository
 from app.common.web import csrf_token, verify_csrf, workspace_id
 from app.common.time import korean_time
+from app.reference.kamis import KamisPrices
 from app.reference.seoul_areas import SeoulAreaData
 
 
@@ -69,7 +70,8 @@ def create_app(config=None,enabled_modules=None):
         if name=='marketing':
             options={'campaigns':importlib.import_module('app.modules.marketing.repositories.campaigns').CampaignStore(catalog_db)}
         if name=='material_cost':
-            options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db)}
+            options={'catalog':importlib.import_module('app.modules.material_cost.repositories.catalog').MaterialCatalog(catalog_db),
+                     'prices':app.config.get('MARKET_PRICES') or KamisPrices(catalog_db)}
         if name=='menu_pricing':
             recipes=importlib.import_module('app.modules.menu_pricing.repositories.recipes').RecipeStore(catalog_db)
             sales=importlib.import_module('app.modules.menu_pricing.repositories.sales').SalesStore(catalog_db)
