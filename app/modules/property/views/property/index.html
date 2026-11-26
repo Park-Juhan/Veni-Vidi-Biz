@@ -28,6 +28,17 @@
 </div>
 <p class="step-hint">저장한 후보가 없어 가상 예시 2곳으로 비교합니다. 화면 아래 "내 후보 목록"에서 실제 후보를 추가하세요.</p>
 {% endif %}
+{% if startup_industries %}
+<div class="fields-grid area-industry">
+  <div class="field"><label for="startup_industry">업종 평균 임대·창업비용 비교 (선택)</label><select id="startup_industry" name="startup_industry">
+    <option value="none" {% if values.get('startup_industry','none') == 'none' %}selected{% endif %}>비교하지 않음</option>
+    {% for industry in startup_industries %}<option {% if values.get('startup_industry') == industry %}selected{% endif %}>{{ industry }}</option>{% endfor %}</select>
+    <small>소상공인실태조사(2024) 업종 평균 보증금·월세와 창업비용 분포입니다. 카페·식당은 "음식점 및 주점업".</small></div>
+  <div class="field"><label for="startup_region">지역</label><select id="startup_region" name="startup_region">
+    {% for region in startup_regions %}<option {% if (values.get('startup_region') or '서울특별시') == region %}selected{% endif %}>{{ region }}</option>{% endfor %}</select>
+    <small>서울은 대분류 단위만 공개되어, 중분류를 고르면 전국 값을 씁니다.</small></div>
+</div>
+{% endif %}
 {% endset %}
 {% set ns = namespace(steps=[], seen=[]) %}
 {% for field in fields if field.group not in ns.seen %}

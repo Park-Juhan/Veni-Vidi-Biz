@@ -14,9 +14,14 @@ def create_blueprint(model, title, description, number):
 
     def current_values(workspace):
         record = model.latest(workspace)
-        return record.inputs.copy() if record else model.defaults()
+        return model.defaults() | record.inputs if record else model.defaults()
 
     def prepare_submission(values, source, workspace, form):
+        if model.dineout:
+            values['dine_menu'] = form.get('dine_menu', 'none').strip()
+            values['dine_region'] = form.get('dine_region', '').strip()
+            if values['dine_menu'] != 'none':
+                source += ' / 외식비 평균 비교'
         use_recipe = form.get('use_recipe') == 'yes'
         if use_recipe:
             values['use_recipe'] = 'yes'
@@ -84,6 +89,12 @@ def create_blueprint(model, title, description, number):
         return values, {}
 
     def view_context(workspace):
+        menus_, regions_ = model.dineout_choices()
+        extra = dict(dine_menus=menus_, dine_regions=regions_,
+                     market_data_title='입력 기반 계산 · 지역 외식비 평균 비교 가능' if menus_ else None)
+        return extra | sales_context(workspace)
+
+    def sales_context(workspace):
         if model.sales is None:
             return dict(recipe_enabled=model.recipes is not None, recipe_rows=model.RECIPE_ROWS,
                         saved_materials=model.materials(workspace), menus=model.list_menus(workspace), sales_enabled=False)

@@ -1,5 +1,17 @@
 {% extends "module.html" %}
 {% block module_inputs %}
+{% if dine_menus %}
+<div class="integration-box dine-box">
+  <div class="fields-grid">
+    <div class="field"><label for="dine_menu">비교할 외식 메뉴 (선택)</label><select id="dine_menu" name="dine_menu">
+      <option value="none" {% if values.get('dine_menu','none') == 'none' %}selected{% endif %}>비교하지 않음</option>
+      {% for menu in dine_menus %}<option {% if values.get('dine_menu') == menu %}selected{% endif %}>{{ menu }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="dine_region">지역</label><select id="dine_region" name="dine_region">
+      {% for region in dine_regions %}<option {% if (values.get('dine_region') or '서울') == region %}selected{% endif %}>{{ region }}</option>{% endfor %}</select></div>
+  </div>
+  <p>행정안전부 지방물가 외식비(대표 음식점 평균)와 내 가격을 비교합니다. 음식점 메뉴일 때 고르세요.</p>
+</div>
+{% endif %}
 <div class="integration-box">
   <label class="checkbox-label">
     <input type="checkbox" name="use_material" value="yes" {% if values.get('use_material')=='yes' %}checked{% endif %}>

@@ -142,3 +142,41 @@ class BenchmarkProvider(Protocol):
     def industries(self) -> list[str]: ...
     def regions(self) -> list[str]: ...
     def benchmark(self, industry: str, region: str) -> IndustryBenchmark | None: ...
+
+
+@dataclass(frozen=True)
+class DineOutQuote:
+    """Average price of one representative restaurant menu in one region (원)."""
+    menu: str
+    region: str
+    month: str
+    price: int
+    year_ago_price: int | None
+    source: str
+
+
+class DineOutProvider(Protocol):
+    def available(self) -> bool: ...
+    def menus(self) -> list[str]: ...
+    def regions(self) -> list[str]: ...
+    def quote(self, menu: str, region: str) -> DineOutQuote | None: ...
+
+
+@dataclass(frozen=True)
+class StartupBenchmark:
+    """Start-up cost brackets (% of businesses) and average lease terms (원) of one industry and region."""
+    industry: str
+    region: str
+    year: str
+    cost_brackets: tuple[Decimal | None, Decimal | None, Decimal | None]   # 5천만원 미만, 5천만~1억, 1억 이상
+    own_brackets: tuple[Decimal | None, Decimal | None, Decimal | None]
+    deposit: Decimal | None
+    monthly_rent: Decimal | None
+    source: str
+
+
+class StartupBenchmarkProvider(Protocol):
+    def available(self) -> bool: ...
+    def industries(self) -> list[str]: ...
+    def regions(self) -> list[str]: ...
+    def benchmark(self, industry: str, region: str) -> StartupBenchmark | None: ...

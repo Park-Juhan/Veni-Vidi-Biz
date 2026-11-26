@@ -5,7 +5,8 @@
 
 Recognised now: 서울시 상권분석서비스 "-상권" CSV files (영역, 추정매출, 점포, 길단위인구,
 상주인구, 직장인구, 집객시설, 상권변화지표), KAMIS_소매가격_월별_*.csv,
-KOSIS_소상공인실태조사_업종별_경영지표_*.csv, 한국소비자원_생필품*.csv and 서울시_생필품_농수축산물*.csv.
+KOSIS_소상공인실태조사_업종별_경영지표_*.csv, KOSIS_소상공인실태조사_창업비용_임차_*.csv,
+외식비_시도별_*.csv, 한국소비자원_생필품*.csv and 서울시_생필품_농수축산물*.csv.
 Other files are skipped.
 """
 import argparse
@@ -15,7 +16,7 @@ import sys
 import time
 
 from app.common.db import Database
-from app.reference import consumer_prices, kamis, kosis
+from app.reference import consumer_prices, dineout, kamis, kosis
 from app.reference.seoul_areas import DataImportError, import_file, kind_of
 
 ROOT = Path(__file__).resolve().parent
@@ -33,7 +34,8 @@ def main(argv=None):
     database = Database(args.database)
     database.migrate()
     files = sorted(folder.glob('*.csv'))
-    known = sorted((p for p in files if kind_of(p) or kamis.is_kamis(p) or kosis.is_kosis(p)), key=lambda p: kind_of(p) != '영역')
+    single = (kind_of, kamis.is_kamis, kosis.is_kosis, kosis.is_startup, dineout.is_dineout)
+    known = sorted((p for p in files if any(test(p) for test in single)), key=lambda p: kind_of(p) != '영역')
     # Consumer price files of one source (e.g. 서울 2024 + 2025) are imported together.
     grouped = {}
     for path in files:
@@ -51,7 +53,8 @@ def main(argv=None):
             if isinstance(path, list):
                 dataset, rows = consumer_prices.import_files(database, path)
             else:
-                loader = kamis.import_file if kamis.is_kamis(path) else kosis.import_file if kosis.is_kosis(path) else import_file
+                loader = (kamis.import_file if kamis.is_kamis(path) else kosis.import_file if kosis.is_kosis(path)
+                          else kosis.import_startup_file if kosis.is_startup(path) else dineout.import_file if dineout.is_dineout(path) else import_file)
                 dataset, rows = loader(database, path)
         except (DataImportError, UnicodeDecodeError) as exc:
             name = ', '.join(p.name for p in path) if isinstance(path, list) else path.name

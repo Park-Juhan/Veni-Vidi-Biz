@@ -25,6 +25,11 @@ def create_blueprint(model, title, description, number):
         values['candidates'] = candidates
         values['compare'] = sorted(int(c['id']) for c in candidates if 'id' in c)
         source += f' / 저장한 후보 {len(candidates)}곳 비교' if saved else ' / 가상 예시 후보 2곳 비교'
+        if model.startup:
+            values['startup_industry'] = form.get('startup_industry', 'none').strip()
+            values['startup_region'] = form.get('startup_region', '').strip()
+            if values['startup_industry'] != 'none':
+                source += ' / 소상공인실태조사 임대·창업비용 비교'
         if model.areas:
             values['area_industry'] = form.get('area_industry', '').strip()
             if any(c.get('region_code') for c in candidates):
@@ -64,8 +69,10 @@ def create_blueprint(model, title, description, number):
         for candidate in saved:
             candidate['region_label'] = model.area_label(candidate.get('region_code'))
         industries = model.area_industries()
+        startup_industries, startup_regions = model.startup_choices()
         return dict(candidates_enabled=model.candidate_store is not None, saved_candidates=saved,
                     area_options=model.area_options(), area_industries=industries, default_industry='커피-음료' if '커피-음료' in industries else (industries or [''])[0],
+                    startup_industries=startup_industries, startup_regions=startup_regions,
                     candidate_form=g.get('candidate_form') or {}, editing_id=g.get('editing_id'),
                     market_data_title='입력 기반 비교 · 서울 상권 공개 통계 연결 가능' if industries else None,
                     example_candidates=model.defaults()['candidates'])

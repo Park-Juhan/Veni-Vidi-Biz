@@ -25,8 +25,10 @@ class MenuPricingModel(AnalysisModel):
              (False,False):('저인기·저수익','메뉴 정리나 재구성을 검토하세요.')}
 
     def __init__(self,repository,material_provider: MaterialCostProvider | None = None,
-                 material_catalog: MaterialCatalogProvider | None = None,recipes=None,sales=None):
+                 material_catalog: MaterialCatalogProvider | None = None,recipes=None,sales=None,dineout=None):
         super().__init__(repository)
+        # Optional DineOutProvider (average restaurant menu prices by region); unused until data is imported.
+        self.dineout_provider=dineout
         self.material_provider=material_provider
         # Recipe costing needs both the saved-material list (material module) and a recipe store.
         self.material_catalog=material_catalog
@@ -144,6 +146,42 @@ class MenuPricingModel(AnalysisModel):
                     material=sum((r['material']*r['quantity'] for r in rows),Decimal(0)),
                     contribution=sum((r['total_margin'] for r in rows),Decimal(0)))
 
+    @property
+    def dineout(self):
+        provider=self.dineout_provider
+        return provider if provider is not None and provider.available() else None
+
+    def dineout_choices(self):
+        return (self.dineout.menus(),self.dineout.regions()) if self.dineout else ([],[])
+
+    def prepare(self,values,raw):
+        """Attach the chosen restaurant menu average (or none) for the comparison tab."""
+        values['dineout']=None
+        menu=(raw.get('dine_menu') or 'none').strip()
+        if not self.dineout or menu=='none': return values
+        menus,regions=self.dineout_choices()
+        region=(raw.get('dine_region') or ('서울' if '서울' in regions else regions[0])).strip()
+        if menu not in menus or region not in regions:
+            raise ValidationError('비교할 외식 메뉴와 지역을 목록에서 골라 주세요.')
+        quote=self.dineout.quote(menu,region)
+        values['dineout']=dict(menu=quote.menu,region=quote.region,month=quote.month,price=quote.price,
+                               year_ago_price=quote.year_ago_price,source=quote.source) if quote else None
+        return values
+
+    @staticmethod
+    def dineout_table(v,suggested):
+        d=v.get('dineout')
+        if not d: return None
+        avg=Decimal(d['price'])
+        def gap(price): return (price-avg)/avg*100
+        change=(avg-d['year_ago_price'])/d['year_ago_price']*100 if d['year_ago_price'] else None
+        rows=[['지역 평균 외식 가격',avg,'-','-'],['현재 가격',v['price'],v['price']-avg,gap(v['price'])],['계산 기준 가격',suggested,suggested-avg,gap(suggested)]]
+        note=(f"출처: {d['source']}, {d['month']} 기준. 1년 전 대비 {change:+.1f}%." if change is not None else f"출처: {d['source']}, {d['month']} 기준.")
+        note+=' 지역 대표 음식점의 평균 판매가이며 메뉴 구성·양·입지에 따라 차이가 큽니다. 가격 수준 참고용입니다. (내 PC 계산용)'
+        return dict(tab='외식 가격 비교',title=f"{d['region']} {d['menu']} 평균 가격과 비교 ({d['month']})",
+                    lead='내 가격이 지역 평균보다 얼마나 높거나 낮은지 보여 줍니다.',
+                    columns=['구분','가격 (원)','평균과 차이 (원)','평균과 차이 (%)'],rows=rows,note=note)
+
     def import_material(self,workspace):
         return self.material_provider.export_usage_cost(workspace) if self.material_provider else None
 
@@ -158,7 +196,8 @@ class MenuPricingModel(AnalysisModel):
             rows.append([label,price,v['volume'],price*v['volume'],profit,profit*v['volume'],profit/price*100 if price else '산출 불가'])
         return dict(metrics=[('100원 단위 올림 가격',suggested,'원'),('단위 변동 원가',cost,'원'),('기준 가격의 월 공헌이익',(suggested-cost)*v['volume'],'원')],
                     columns=['시나리오','판매가 (원)','월 판매량','월 매출 (원)','단위 공헌이익 (원)','월 공헌이익 (원)','공헌이익률 (%)'],rows=rows,
-                    chart=[(label,price*v['volume']) for label,price in prices],chart_title='가격별 월 매출 비교 (동일 판매량 가정)',menu_name=v['name'],monthly_revenue=v['price']*v['volume'],monthly_material=v['material']*v['volume'],monthly_volume=v['volume'],
+                    chart=[(label,price*v['volume']) for label,price in prices],chart_title='가격별 월 매출 비교 (동일 판매량 가정)',
+                    extra_tables=[t for t in [self.dineout_table(v,suggested)] if t],menu_name=v['name'],monthly_revenue=v['price']*v['volume'],monthly_material=v['material']*v['volume'],monthly_volume=v['volume'],
                     notes=[f'반올림 전 가격 = 단위 변동 원가 ÷ (1 - 목표 공헌이익률) = {exact:,.2f}원. 표시 가격은 100원 단위 올림입니다.',
                            '공헌이익 = 매출 - 변동 원가. 임대료·인건비·세금 등을 차감한 순이익이 아닙니다.',
                            '모든 가격에서 입력 판매량을 동일하게 가정합니다. 가격에 따른 수요 변화나 실제 적정 시장 가격을 예측하지 않습니다.'])

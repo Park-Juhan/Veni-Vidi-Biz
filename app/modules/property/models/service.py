@@ -44,12 +44,22 @@ class PropertyModel(AnalysisModel):
             '상권 데이터: 비교하는 후보 모두에 상권이 연결되어 있을 때만 반영합니다.', '상권 데이터 · 낮을수록 유리한 기준입니다.', '상권 데이터'))
     )
 
-    def __init__(self, repository, candidates=None, areas=None):
+    def __init__(self, repository, candidates=None, areas=None, startup=None):
         super().__init__(repository)
+        # Optional StartupBenchmarkProvider (start-up cost brackets, average deposit and rent by industry).
+        self.startup_provider = startup
         # Optional saved-candidate list (needs a database); None means the examples are always used.
         self.candidate_store = candidates
         # Optional AreaDataProvider (public commercial-area statistics); unused until data is imported.
         self.area_provider = areas
+
+    @property
+    def startup(self):
+        provider = self.startup_provider
+        return provider if provider is not None and provider.available() else None
+
+    def startup_choices(self):
+        return (self.startup.industries(), self.startup.regions()) if self.startup else ([], [])
 
     @property
     def areas(self):
@@ -146,7 +156,15 @@ class PropertyModel(AnalysisModel):
             raise ValidationError(' / '.join(errors))
         if len({c['name'] for c in checked}) != len(checked):
             raise ValidationError('후보 이름이 겹칩니다. 서로 다른 이름을 쓰세요.')
-        return values | {'candidates': checked, 'area_industry': industry if industries else None}
+        values = values | {'candidates': checked, 'area_industry': industry if industries else None, 'startup': None}
+        if self.startup and (raw.get('startup_industry') or '').strip() not in ('', 'none'):
+            names, regions = self.startup_choices()
+            chosen, region = raw['startup_industry'].strip(), (raw.get('startup_region') or '서울특별시').strip()
+            if chosen not in names or region not in regions:
+                raise ValidationError('업종 평균 비교의 업종과 지역을 목록에서 골라 주세요.')
+            found = self.startup.benchmark(chosen, region)
+            values['startup'] = asdict(found) if found else None
+        return values
 
     def calculate(self, v):
         decision = compare_locations(v)
@@ -169,6 +187,9 @@ class PropertyModel(AnalysisModel):
                  'TOPSIS: 기준마다 값을 정규화하고 가중치를 곱한 뒤, 가장 좋은 값(이상해)에 가깝고 가장 나쁜 값에서 먼 정도를 0~100 근접도로 계산합니다.',
                  '순위: 임대료 예산과 필요 면적을 모두 충족한 후보를 먼저 두고, 같은 그룹 안에서 근접도가 높은 순으로 정렬합니다.',
                  '적합도 1~5점은 사용자 평가입니다. 매물 자체의 정보(임대료·면적 등)는 사용자 입력입니다.']
+        startup_tab = self.startup_table(candidates, v.get('startup'), v)
+        if startup_tab:
+            notes.append(startup_tab['note'])
         area_tab = self.area_table(candidates, v.get('area_industry'))
         if area_tab:
             notes.append(area_tab['note'])
@@ -182,10 +203,39 @@ class PropertyModel(AnalysisModel):
             columns=['후보', '월 임대료 (원)', '보증금 (원)', '면적 (㎡)', '초기 필요 자금 (원)', '부족 자금 (원)', 'TOPSIS 근접도 (0~100)', '검토 사항'], rows=rows,
             extra_tables=[dict(tab='기준별 비교', title='평가 기준별 값과 가중치', lead='각 기준에서 유리한 후보와 반영 비중입니다. 가중치를 바꾸면 순위가 달라질 수 있습니다.',
                                columns=['기준', '가중치 (%)', '방향', *[c['name'] for c in candidates], '유리한 후보'], rows=criteria_rows,
-                               note='적합도 1~5점은 사용자가 직접 평가한 값입니다.')] + ([area_tab] if area_tab else []),
+                               note='적합도 1~5점은 사용자가 직접 평가한 값입니다.')] + ([area_tab] if area_tab else []) + ([startup_tab] if startup_tab else []),
             chart=[('보증금', b['deposit']), ('첫 달 임대료', b['rent']), ('시설·인테리어', b['interior']), ('장비', v['equipment']), ('초기 재료', v['initial_material']), ('기타', v['other_startup'])],
             chart_title='조건 비교 1순위 후보의 초기 자금 구성', best_name=best['name'], best_rent=b['rent'],
             notes=notes, trace=decision['trace'])
+
+    @staticmethod
+    def startup_table(candidates, b, v):
+        """Result tab comparing each candidate with the industry's average lease and start-up cost brackets."""
+        if not b:
+            return None
+        labels = ('5천만 원 미만', '5천만~1억 원', '1억 원 이상')
+        def bracket(amount):
+            return 0 if amount < 50_000_000 else 1 if amount < 100_000_000 else 2
+        def pct(value, avg):
+            return (value - avg) / avg * 100 if avg else '-'
+        rent, deposit = b['monthly_rent'], b['deposit']
+        rows = []
+        for c in candidates:
+            source = c['input']
+            index = bracket(c['startup'])
+            share = b['cost_brackets'][index]
+            rows.append([c['name'], source['rent'], pct(source['rent'], rent) if rent else '-', source['deposit'],
+                         pct(source['deposit'], deposit) if deposit else '-', c['startup'],
+                         f"{labels[index]} (업체 {share:.1f}%)" if share is not None else labels[index]])
+        brackets = ', '.join(f"{label} {value:.1f}%" for label, value in zip(labels, b['cost_brackets']) if value is not None)
+        note = (f"업종 평균 출처: {b['source']}, {b['year']}년 {b['region']} · {b['industry']}. 평균 월세 "
+                f"{rent:,.0f}원, 보증금 {deposit:,.0f}원(보증금 있는 월세 기준). 창업비용 분포: {brackets}. "
+                '창업비용 구간은 이 화면의 초기 필요 자금(보증금 포함)과 기준이 다를 수 있어 대략적인 위치만 보여 줍니다. (내 PC 계산용)'
+                if rent is not None and deposit is not None else f"업종 평균 출처: {b['source']}, {b['year']}년 {b['region']} · {b['industry']}.")
+        return dict(tab='업종 평균 임대·창업비용', title=f"업종 평균과 비교 ({b['industry']} · {b['region']}, {b['year']})",
+                    lead='후보의 월 임대료·보증금을 업종 평균과 비교하고, 초기 필요 자금이 업종 창업비용 분포에서 어느 구간인지 보여 줍니다.',
+                    columns=['후보', '월 임대료 (원)', '평균 월세 대비 (%)', '보증금 (원)', '평균 보증금 대비 (%)', '초기 필요 자금 (원)', '창업비용 구간 (해당 구간 업체 비율)'],
+                    rows=rows, note=note)
 
     @staticmethod
     def area_table(candidates, industry):

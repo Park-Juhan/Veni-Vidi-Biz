@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.common.db import utc_now
-from app.integrations.contracts import IndustryBenchmark
+from app.integrations.contracts import IndustryBenchmark, StartupBenchmark
 from app.reference.seoul_areas import DataImportError, read_rows
 
 DATASET = '소상공인실태조사 업종별 경영지표'
@@ -103,3 +103,83 @@ class KosisBenchmarks:
             other_ratio=share(split['other_cost'], base) if split else None,
             profit_ratio=share(row['profit'], Decimal(row['revenue'])),
             split_region=split_region, source=PROVIDER)
+
+
+# ---- Start-up cost brackets and lease terms (KOSIS DT_3ME0126 창업비용, DT_3ME0132 보증금 및 월세) ----
+STARTUP_DATASET = '소상공인실태조사 창업비용·임차 조건'
+STARTUP_PROVIDER = '중소벤처기업부 「소상공인실태조사」 (KOSIS: 시도/산업중분류별 창업비용·기업체당 보증금 및 월세)'
+STARTUP_COLUMNS = ('기준연도', '시도', '대분류', '업종', '창업비용_5천만원미만(%)', '창업비용_5천만원~1억원(%)', '창업비용_1억원이상(%)',
+                   '본인부담_5천만원미만(%)', '본인부담_5천만원~1억원(%)', '본인부담_1억원이상(%)', '보증금(만원)', '월세(만원)', '보증금없는월세(만원)')
+
+
+def is_startup(path):
+    name = Path(path).name
+    return name.startswith('KOSIS_소상공인실태조사_창업비용_임차') and name.endswith('.csv')
+
+
+def _num(text):
+    text = (text or '').replace(',', '').strip()
+    return float(text) if text not in ('', '-') else None
+
+
+def import_startup_file(database, path):
+    rows = []
+    for index, row in enumerate(read_rows(path)):
+        if index == 0:
+            missing = [c for c in STARTUP_COLUMNS if c not in row]
+            if missing:
+                raise DataImportError(f'{Path(path).name}: 열이 없습니다 ({", ".join(missing[:4])}).')
+        values = [_num(row[c]) for c in STARTUP_COLUMNS[4:]]
+        rows.append((row['기준연도'], row['시도'], row['대분류'], row['업종'], *values[:6], *(None if v is None else int(v) for v in values[6:])))
+    years = {r[0] for r in rows}
+    with database.connect() as connection:
+        connection.execute('DELETE FROM startup_benchmarks')
+        connection.executemany('INSERT OR REPLACE INTO startup_benchmarks VALUES (' + ', '.join('?' * 13) + ')', rows)
+        connection.execute('INSERT INTO datasets VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET file_name = excluded.file_name, '
+                           'period_from = excluded.period_from, period_to = excluded.period_to, row_count = excluded.row_count, imported_at = excluded.imported_at',
+                           (STARTUP_DATASET, STARTUP_PROVIDER, Path(path).name, min(years, default=None), max(years, default=None), len(rows), utc_now()))
+    return STARTUP_DATASET, len(rows)
+
+
+class StartupBenchmarks:
+    """Implements StartupBenchmarkProvider; a missing regional row falls back to 전국."""
+
+    def __init__(self, database):
+        self.database = database
+
+    def _rows(self):
+        with self.database.connect() as connection:
+            return [dict(r) for r in connection.execute('SELECT * FROM startup_benchmarks ORDER BY year DESC, rowid')]
+
+    def available(self):
+        try:
+            with self.database.connect() as connection:
+                return connection.execute('SELECT 1 FROM startup_benchmarks LIMIT 1').fetchone() is not None
+        except Exception:  # tables missing (not migrated)
+            return False
+
+    def industries(self):
+        seen = []
+        for row in self._rows():
+            label = label_of(row['sector'], row['industry'])
+            if row['region'] == '전국' and label not in seen: seen.append(label)
+        return seen
+
+    def regions(self):
+        seen = []
+        for row in self._rows():
+            if row['region'] not in seen: seen.append(row['region'])
+        return seen
+
+    def benchmark(self, industry, region):
+        rows = self._rows()
+        found = next((r for r in rows if r['region'] == region and label_of(r['sector'], r['industry']) == industry), None) \
+            or next((r for r in rows if r['region'] == '전국' and label_of(r['sector'], r['industry']) == industry), None)
+        if found is None:
+            return None
+        dec = lambda v: None if v is None else Decimal(str(v))
+        won = lambda v: None if v is None else Decimal(v) * 10000
+        return StartupBenchmark(industry=industry, region=found['region'], year=found['year'],
+                                cost_brackets=tuple(dec(found[k]) for k in ('cost_under_50m', 'cost_50m_100m', 'cost_over_100m')),
+                                own_brackets=tuple(dec(found[k]) for k in ('own_under_50m', 'own_50m_100m', 'own_over_100m')),
+                                deposit=won(found['deposit']), monthly_rent=won(found['rent']), source=STARTUP_PROVIDER)

@@ -11,7 +11,8 @@ from app.common.repository import SqliteRepository
 from app.common.web import csrf_token, verify_csrf, workspace_id
 from app.common.time import korean_time
 from app.reference.kamis import KamisPrices
-from app.reference.kosis import KosisBenchmarks
+from app.reference.dineout import DineOutPrices
+from app.reference.kosis import KosisBenchmarks, StartupBenchmarks
 from app.reference.seoul_areas import SeoulAreaData
 
 
@@ -67,7 +68,8 @@ def create_app(config=None,enabled_modules=None):
         if name=='property':
             # Reference data lives in the same database; tests can pass AREA_DATA (any AreaDataProvider).
             options={'candidates':importlib.import_module('app.modules.property.repositories.candidates').CandidateStore(catalog_db),
-                     'areas':app.config.get('AREA_DATA') or SeoulAreaData(catalog_db)}
+                     'areas':app.config.get('AREA_DATA') or SeoulAreaData(catalog_db),
+                     'startup':app.config.get('STARTUP_BENCHMARKS') or StartupBenchmarks(catalog_db)}
         if name=='marketing':
             options={'campaigns':importlib.import_module('app.modules.marketing.repositories.campaigns').CampaignStore(catalog_db)}
         if name=='material_cost':
@@ -76,7 +78,8 @@ def create_app(config=None,enabled_modules=None):
         if name=='menu_pricing':
             recipes=importlib.import_module('app.modules.menu_pricing.repositories.recipes').RecipeStore(catalog_db)
             sales=importlib.import_module('app.modules.menu_pricing.repositories.sales').SalesStore(catalog_db)
-            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes,'sales':sales}
+            options={'material_provider':models.get('material_cost'),'material_catalog':models.get('material_cost'),'recipes':recipes,'sales':sales,
+                     'dineout':app.config.get('DINEOUT') or DineOutPrices(catalog_db)}
         if name=='cost_optimization':
             # Only enabled providers; each is labelled "<number> <title>" for display.
             labels={m[0]:f'{m[5]} {m[2]}' for m in MODULES}
